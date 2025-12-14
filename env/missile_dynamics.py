@@ -2,11 +2,13 @@
 """Simple point-mass kinematics for the blue aircraft and red missiles.
 
 This module contains small helper functions that the environment uses to
-propagate the states forward in time. The kinematics are intentionally simple:
-- the blue aircraft is modeled as a point mass with bounded speed and
+propagate the states forward in time.
+
+- The blue aircraft is modeled as a point mass with bounded speed and
   discrete acceleration actions;
-- each missile steers directly towards the current blue position at a fixed
-  speed (pure pursuit).
+- Each missile uses a *proportional-navigation-like* guidance law: its
+  velocity direction is continuously steered towards the line-of-sight to
+  the blue aircraft, while keeping speed constant.
 """
 
 from typing import Tuple
@@ -66,31 +68,86 @@ def update_blue_state(
     return pos, vel
 
 
-def update_missiles_towards_blue(
+def update_missiles_pn(
     missile_pos: np.ndarray,
+    missile_vel: np.ndarray,
     blue_pos: np.ndarray,
+    blue_vel: np.ndarray,
     missile_speed: float,
     dt: float,
-) -> np.ndarray:
-    """Move all missiles one step towards the blue aircraft.
+    nav_gain: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Update missiles using a simple proportional-navigation-like guidance.
+
+    This is not a full 3DoF PN implementation, but a discrete-time heading
+    update that captures the main idea: the missile's velocity direction is
+    rotated towards the instantaneous line-of-sight (LOS) to the target.
 
     Args:
         missile_pos: (M, 3) missile positions
+        missile_vel: (M, 3) missile velocities
         blue_pos: (3,) blue aircraft position
-        missile_speed: scalar missile speed
+        blue_vel: (3,) blue aircraft velocity (currently unused but kept for extensibility)
+        missile_speed: scalar missile speed (kept constant)
         dt: time step
+        nav_gain: navigation gain controlling how aggressively the heading
+            is turned towards the LOS direction.
 
     Returns:
         new_missile_pos: (M, 3)
+        new_missile_vel: (M, 3)
     """
-    missile_pos = missile_pos.astype(float)
+    M = missile_pos.shape[0]
+    new_pos = missile_pos.astype(float).copy()
+    new_vel = missile_vel.astype(float).copy()
     blue_pos = blue_pos.astype(float).reshape(1, 3)
 
-    diff = blue_pos - missile_pos
-    dist = np.linalg.norm(diff, axis=1, keepdims=True)  # (M,1)
-    # Avoid division by zero
-    dist = np.maximum(dist, 1e-6)
+    for i in range(M):
+        p = new_pos[i]
+        v = new_vel[i]
 
-    direction = diff / dist
-    step = direction * (missile_speed * dt)
-    return missile_pos + step
+        # Ensure non-zero velocity; if zero, initialize towards the target.
+        speed = np.linalg.norm(v)
+        if speed < 1e-6:
+            direction = blue_pos[0] - p
+            norm = np.linalg.norm(direction)
+            if norm < 1e-6:
+                direction = np.array([1.0, 0.0, 0.0])
+                norm = 1.0
+            u = direction / norm
+            v = u * missile_speed
+            speed = missile_speed
+        else:
+            u = v / speed
+
+        # Line-of-sight unit vector from missile to target.
+        r = blue_pos[0] - p
+        r_norm = np.linalg.norm(r)
+        if r_norm < 1e-6:
+            # Practically at target: keep heading.
+            los = u
+        else:
+            los = r / r_norm
+
+        # Component of LOS orthogonal to current velocity direction.
+        # This approximates the normal acceleration direction.
+        los_perp = los - np.dot(los, u) * u
+        perp_norm = np.linalg.norm(los_perp)
+        if perp_norm > 1e-6:
+            los_perp /= perp_norm
+            # Heading update (discrete-time analogue of lateral acceleration).
+            u_new = u + nav_gain * los_perp * dt
+            u_new_norm = np.linalg.norm(u_new)
+            if u_new_norm > 1e-6:
+                u = u_new / u_new_norm
+
+        # Keep constant speed.
+        v = u * missile_speed
+
+        # Integrate position.
+        p = p + v * dt
+
+        new_pos[i] = p
+        new_vel[i] = v
+
+    return new_pos, new_vel

@@ -1,9 +1,10 @@
 
-"""Escape environment: blue aircraft vs. three red missiles.
+"""Escape environment: blue aircraft vs. red missiles using PN guidance.
 
-The red missiles' *launch positions* are selected by a game-theoretic style
-launcher, while the blue aircraft is controlled by a reinforcement learning
-agent that learns an escape policy.
+The red missiles' *launch positions* are selected by a game-theoretic launcher
+that approximates a Nash equilibrium in a discrete zero-sum game. The blue
+aircraft is controlled by a reinforcement learning agent that learns an escape
+policy.
 
 This environment intentionally follows a Gym-like API but does not depend
 on the gym package:
@@ -15,12 +16,11 @@ on the gym package:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Dict, Tuple, Any
 import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
-from .missile_dynamics import update_blue_state, update_missiles_towards_blue
+from .missile_dynamics import update_blue_state, update_missiles_pn
 from config import EnvConfig
 
 
@@ -36,6 +36,9 @@ class EscapeEnv:
             region_max=cfg.region_max,
             num_missiles=cfg.num_missiles,
             candidate_launch_count=cfg.candidate_launch_count,
+            num_blue_strategies=cfg.num_blue_strategies,
+            fictitious_iters=cfg.fictitious_iters,
+            blue_escape_distance=cfg.blue_escape_distance,
         )
         self.launcher = GameTheoreticLauncher(region, rng=self.rng)
 
@@ -43,6 +46,7 @@ class EscapeEnv:
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
         self.missile_pos = np.zeros((cfg.num_missiles, 3), dtype=float)
+        self.missile_vel = np.zeros((cfg.num_missiles, 3), dtype=float)
         self.t = 0
         self.done = False
 
@@ -68,10 +72,20 @@ class EscapeEnv:
         self.blue_pos = v * radius
         self.blue_vel = np.zeros(3, dtype=float)
 
-        # Compute red missile launch positions via game-theoretic launcher.
+        # Compute red missile launch positions via game-theoretic launcher (Nash).
         launch_positions = self.launcher.compute_launch_positions(self.blue_pos)
-        # Ensure correct shape (M,3)
         self.missile_pos = launch_positions.reshape(self.cfg.num_missiles, 3)
+
+        # Initialize missile velocities to point towards the blue aircraft.
+        self.missile_vel = np.zeros_like(self.missile_pos)
+        for i in range(self.cfg.num_missiles):
+            direction = self.blue_pos - self.missile_pos[i]
+            norm = np.linalg.norm(direction)
+            if norm < 1e-6:
+                direction = np.array([1.0, 0.0, 0.0])
+                norm = 1.0
+            direction /= norm
+            self.missile_vel[i] = direction * self.cfg.missile_speed
 
         return self._get_obs()
 
@@ -104,9 +118,15 @@ class EscapeEnv:
             v_max=self.cfg.blue_max_speed,
         )
 
-        # Update missile positions (pure pursuit).
-        self.missile_pos = update_missiles_towards_blue(
-            self.missile_pos, self.blue_pos, self.cfg.missile_speed, self.cfg.dt
+        # Update missile positions and velocities using PN-like guidance.
+        self.missile_pos, self.missile_vel = update_missiles_pn(
+            self.missile_pos,
+            self.missile_vel,
+            self.blue_pos,
+            self.blue_vel,
+            self.cfg.missile_speed,
+            self.cfg.dt,
+            self.cfg.nav_gain,
         )
 
         self.t += 1

@@ -2,7 +2,7 @@
 """Training script for the blue escape agent.
 
 This script wires together:
-- the EscapeEnv environment (red missiles + game-theoretic launcher),
+- the EscapeEnv environment (red missiles + PN guidance + Nash launcher),
 - the DQNAgent (blue reinforcement learning agent),
 - and a simple training loop.
 
@@ -93,5 +93,5 @@ def train():
     print("Training finished.")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # NOTE: typo fixed below
     train()

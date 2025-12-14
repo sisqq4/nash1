@@ -19,16 +19,19 @@ class EnvConfig:
     blue_max_speed: float = 30.0
     blue_accel: float = 10.0
 
-    # Missile dynamics
+    # Missile dynamics (proportional navigation style)
     missile_speed: float = 50.0
     num_missiles: int = 3
+    nav_gain: float = 3.0  # navigation gain for PN-like heading update
 
     # Interaction distances
     hit_radius: float = 5.0
-    # If the episode runs to max_steps without hit we treat as a successful escape
 
     # Game-theoretic launcher parameters
     candidate_launch_count: int = 40  # how many candidate launch points are evaluated each reset
+    num_blue_strategies: int = 8      # number of blue candidate escape headings in the static game
+    fictitious_iters: int = 200       # iterations of fictitious play to approximate Nash
+    blue_escape_distance: float = 60.0  # assumed distance blue may move in the static game payoff
 
 
 @dataclass
