@@ -1,5 +1,5 @@
 
-"""Simple point-mass kinematics for the blue aircraft and red missiles.
+"""Point-mass kinematics for the blue aircraft and red missiles.
 
 This module contains small helper functions that the environment uses to
 propagate the states forward in time.
@@ -75,7 +75,7 @@ def update_missiles_pn(
     blue_vel: np.ndarray,
     missile_speed: float,
     dt: float,
-    nav_gain: float,
+    nav_gain,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Update missiles using a simple proportional-navigation-like guidance.
 
@@ -90,8 +90,8 @@ def update_missiles_pn(
         blue_vel: (3,) blue aircraft velocity (currently unused but kept for extensibility)
         missile_speed: scalar missile speed (kept constant)
         dt: time step
-        nav_gain: navigation gain controlling how aggressively the heading
-            is turned towards the LOS direction.
+        nav_gain: either a scalar gain N, or an array of shape (M,) with
+            individual gains for each missile.
 
     Returns:
         new_missile_pos: (M, 3)
@@ -102,9 +102,17 @@ def update_missiles_pn(
     new_vel = missile_vel.astype(float).copy()
     blue_pos = blue_pos.astype(float).reshape(1, 3)
 
+    # Determine whether nav_gain is scalar or per-missile array.
+    nav_array = np.asarray(nav_gain, dtype=float)
+    if nav_array.shape == ():  # scalar
+        nav_array = np.full(M, float(nav_array))
+    else:
+        assert nav_array.shape[0] == M, "nav_gain array must have shape (M,)"
+
     for i in range(M):
         p = new_pos[i]
         v = new_vel[i]
+        N_gain = float(nav_array[i])
 
         # Ensure non-zero velocity; if zero, initialize towards the target.
         speed = np.linalg.norm(v)
@@ -135,8 +143,9 @@ def update_missiles_pn(
         perp_norm = np.linalg.norm(los_perp)
         if perp_norm > 1e-6:
             los_perp /= perp_norm
-            # Heading update (discrete-time analogue of lateral acceleration).
-            u_new = u + nav_gain * los_perp * dt
+            # Heading update (discrete-time analogue of lateral acceleration),
+            # scaled by navigation gain.
+            u_new = u + N_gain * los_perp * dt
             u_new_norm = np.linalg.norm(u_new)
             if u_new_norm > 1e-6:
                 u = u_new / u_new_norm

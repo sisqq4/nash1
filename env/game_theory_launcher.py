@@ -1,5 +1,5 @@
 
-"""Game-theoretic launcher for the red missiles.
+"""Game-theoretic launcher for the red missiles (Nash-based).
 
 In this implementation, the red side's decision is to select launch positions
 for each missile inside a 3D box (the launch region). Given the blue aircraft's
@@ -76,7 +76,8 @@ class GameTheoreticLauncher:
         else:
             probs = probs / probs.sum()
 
-        # 关键修改：根据非零概率个数决定是否放回采样
+        # Ensure we don't request more distinct samples than non-zero support
+        # when using replace=False.
         nonzero = int((probs > 1e-12).sum())
         replace = self.region.num_missiles > nonzero
 

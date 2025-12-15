@@ -22,16 +22,25 @@ class EnvConfig:
     # Missile dynamics (proportional navigation style)
     missile_speed: float = 50.0
     num_missiles: int = 3
-    nav_gain: float = 3.0  # navigation gain for PN-like heading update
+    nav_gain: float = 3.0  # base navigation gain for PN-like heading update
 
     # Interaction distances
     hit_radius: float = 5.0
 
-    # Game-theoretic launcher parameters
+    # Game-theoretic launcher parameters (Nash for initial launch positions)
     candidate_launch_count: int = 40  # how many candidate launch points are evaluated each reset
     num_blue_strategies: int = 8      # number of blue candidate escape headings in the static game
     fictitious_iters: int = 200       # iterations of fictitious play to approximate Nash
     blue_escape_distance: float = 60.0  # assumed distance blue may move in the static game payoff
+
+    # Differential-game controller for PN gains
+    use_diff_game: bool = True
+    diff_step_size: float = 0.2       # gradient descent step size for nav gain update
+    diff_delta_gain: float = 0.2      # finite-difference perturbation for gradient
+    diff_gain_min: float = 0.5        # lower bound on nav gains
+    diff_gain_max: float = 8.0        # upper bound on nav gains
+    diff_w_dist: float = 1.0          # weight on distance term in running cost
+    diff_w_gain: float = 0.01         # weight on nav gain regularization in running cost
 
 
 @dataclass

@@ -2,7 +2,8 @@
 """Training script for the blue escape agent.
 
 This script wires together:
-- the EscapeEnv environment (red missiles + PN guidance + Nash launcher),
+- the EscapeEnv environment (red missiles + PN guidance + Nash launcher +
+  differential-game controller for nav gains),
 - the DQNAgent (blue reinforcement learning agent),
 - and a simple training loop.
 
@@ -87,11 +88,12 @@ def train():
             avg_reward = sum(episode_rewards[-train_cfg.print_interval:]) / train_cfg.print_interval
             elapsed = time.time() - start_time
             print(
-                f"Episode {ep:4d} | avg_reward (last {train_cfg.print_interval}) = {avg_reward:6.3f} | "                f"steps = {global_step:6d} | elapsed = {elapsed:6.1f}s"
+                f"Episode {ep:4d} | avg_reward (last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
+                f"steps = {global_step:6d} | elapsed = {elapsed:6.1f}s"
             )
 
     print("Training finished.")
 
 
-if __name__ == "__main__":  # NOTE: typo fixed below
+if __name__ == "__main__":
     train()

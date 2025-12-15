@@ -1,17 +1,13 @@
 
-"""Escape environment: blue aircraft vs. red missiles using PN guidance.
+"""Escape environment: blue aircraft vs. red missiles using PN guidance
+and a differential-game controller for navigation gains.
 
-The red missiles' *launch positions* are selected by a game-theoretic launcher
-that approximates a Nash equilibrium in a discrete zero-sum game. The blue
-aircraft is controlled by a reinforcement learning agent that learns an escape
-policy.
-
-This environment intentionally follows a Gym-like API but does not depend
-on the gym package:
-
-    env = EscapeEnv(env_config)
-    obs = env.reset()
-    obs, reward, done, info = env.step(action)
+- 导弹初始发射位置：由 `GameTheoreticLauncher` 通过一个离散零和博弈
+  (Nash 均衡) 决定；
+- 导弹在飞行过程中：使用 PN 导引追踪蓝机，PN 的导航增益向量
+  `nav_gains` 由 `DifferentialGameController` 在每个时间步根据微分博弈
+  思想进行联合调整；
+- 蓝机策略：由强化学习智能体学习的逃逸动作序列。
 """
 
 from __future__ import annotations
@@ -21,6 +17,7 @@ import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
 from .missile_dynamics import update_blue_state, update_missiles_pn
+from .diff_game_controller import DifferentialGameController
 from config import EnvConfig
 
 
@@ -41,12 +38,16 @@ class EscapeEnv:
             blue_escape_distance=cfg.blue_escape_distance,
         )
         self.launcher = GameTheoreticLauncher(region, rng=self.rng)
+        self.diff_ctrl = DifferentialGameController(cfg) if cfg.use_diff_game else None
 
         # Internal simulation state
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
         self.missile_pos = np.zeros((cfg.num_missiles, 3), dtype=float)
         self.missile_vel = np.zeros((cfg.num_missiles, 3), dtype=float)
+        # Navigation gains for each missile (jointly updated by diff-game controller).
+        self.nav_gains = np.full(cfg.num_missiles, cfg.nav_gain, dtype=float)
+
         self.t = 0
         self.done = False
 
@@ -87,6 +88,9 @@ class EscapeEnv:
             direction /= norm
             self.missile_vel[i] = direction * self.cfg.missile_speed
 
+        # Reset nav gains to base value.
+        self.nav_gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
+
         return self._get_obs()
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
@@ -108,7 +112,7 @@ class EscapeEnv:
         if not (0 <= int(action) < self.action_dim):
             raise ValueError(f"Invalid action {action}, expected in [0, {self.action_dim - 1}].")
 
-        # Update blue state.
+        # 1) Update blue state based on RL action.
         self.blue_pos, self.blue_vel = update_blue_state(
             self.blue_pos,
             self.blue_vel,
@@ -118,7 +122,19 @@ class EscapeEnv:
             v_max=self.cfg.blue_max_speed,
         )
 
-        # Update missile positions and velocities using PN-like guidance.
+        # 2) Jointly update nav_gains via differential-game controller (if enabled).
+        if self.diff_ctrl is not None:
+            self.nav_gains = self.diff_ctrl.update_nav_gains(
+                self.blue_pos,
+                self.blue_vel,
+                self.missile_pos,
+                self.missile_vel,
+                self.nav_gains,
+                self.cfg.dt,
+            )
+
+        # 3) Update missile positions and velocities using PN-like guidance
+        #    with (possibly) missile-dependent navigation gains.
         self.missile_pos, self.missile_vel = update_missiles_pn(
             self.missile_pos,
             self.missile_vel,
@@ -126,12 +142,12 @@ class EscapeEnv:
             self.blue_vel,
             self.cfg.missile_speed,
             self.cfg.dt,
-            self.cfg.nav_gain,
+            self.nav_gains,
         )
 
         self.t += 1
 
-        # Compute distances and termination.
+        # 4) Compute distances and termination.
         dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
         min_dist = float(np.min(dists))
 
@@ -156,6 +172,7 @@ class EscapeEnv:
             "min_dist": min_dist,
             "hit": hit,
             "timeout": timeout,
+            "nav_gains": self.nav_gains.copy(),
         }
         return obs, float(reward), bool(self.done), info
 
