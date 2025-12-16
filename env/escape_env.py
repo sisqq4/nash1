@@ -302,14 +302,17 @@ class EscapeEnv:
         if self._plane_name is None or self._missile_names is None:
             return
 
+        # 这里的 episode_index 从 1 开始，每次 reset() 自增
+        ep_idx = self.episode_index
+
         # Write plane track
         if self._plane_track:
-            write_csv(self.cfg.save_dir, self._plane_name, self._plane_track)
+            write_csv(self.cfg.save_dir, self._plane_name, self._plane_track, episode_index=ep_idx,)
 
         # Write missiles
         for track, name in zip(self._missile_tracks, self._missile_names):
             if track:
-                write_csv(self.cfg.save_dir, name, track)
+                write_csv(self.cfg.save_dir, name, track, episode_index=ep_idx)
 
         # Clear references
         self._plane_track = None

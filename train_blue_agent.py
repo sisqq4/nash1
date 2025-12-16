@@ -82,7 +82,7 @@ def train():
             next_obs, reward, done, info = env.step(action)
 
             agent.store_transition(obs, action, reward, next_obs, done)
-            loss = agent.update()
+            _ = agent.update()
 
             obs = next_obs
             ep_reward += reward
@@ -93,6 +93,15 @@ def train():
         if ep % train_cfg.print_interval == 0:
             avg_reward = sum(episode_rewards[-train_cfg.print_interval:]) / train_cfg.print_interval
             elapsed = time.time() - start_time
+            source_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
+            if os.path.isdir(source_dir):
+                target_name = f"session_ep{ep:04d}"
+                write_acmi(
+                    target_name=target_name,
+                    source_dir=source_dir,
+                    time_unit=env_cfg.dt,
+                    explode_time=10,
+                )
             print(
                 f"Episode {ep:4d} | avg_reward (last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
                 f"steps = {global_step:6d} | elapsed = {elapsed:6.1f}s"
@@ -101,10 +110,10 @@ def train():
     print("Training finished.")
 
     # After training, convert all csv trajectories to a single ACMI file.
-    if env_cfg.log_trajectories:
-        print("Converting CSV logs to Tacview ACMI...")
-        write_acmi(target_name="session", save_dir=env_cfg.save_dir, time_unit=env_cfg.dt, explode_time=10)
-        print(f"ACMI file written to {os.path.join(env_cfg.save_dir, 'acmi', 'session.acmi')}")
+    # if env_cfg.log_trajectories:
+    #     print("Converting CSV logs to Tacview ACMI...")
+    #     write_acmi(target_name="session", save_dir=env_cfg.save_dir, time_unit=env_cfg.dt, explode_time=10)
+    #     print(f"ACMI file written to {os.path.join(env_cfg.save_dir, 'acmi', 'session.acmi')}")
 
 
 if __name__ == "__main__":
