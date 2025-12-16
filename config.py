@@ -3,35 +3,44 @@ from dataclasses import dataclass
 
 @dataclass
 class EnvConfig:
-    """Environment configuration for the missile–escape game."""
-    # Red missile launch region (axis-aligned cube)
-    region_min: float = -50.0
-    region_max: float = 50.0
+    """Environment configuration for the missile–escape game.
 
-    # Blue aircraft initial distance from origin (outside the red launch cube)
-    blue_init_radius: float = 120.0
+    Coordinates are interpreted as *kilometers*, time step as *seconds*,
+    and speeds as *kilometers per second* (converted from km/h).
+    """
+    # Red missile launch region is handled inside GameTheoreticLauncher;
+    # here we keep a characteristic span for reward shaping only.
+    region_span: float = 160.0  # km, characteristic scale for distance normalization
+
+    # Blue aircraft initial position (km)
+    blue_init_x: float = 70.0
+    blue_init_y: float = 0.0
+    blue_init_z: float = 0.0
 
     # Simulation parameters
-    dt: float = 0.1
-    max_steps: int = 200
+    dt: float = 1.0          # [s] time step
+    max_steps: int = 200     # max steps per episode
 
     # Blue aircraft dynamics
-    blue_max_speed: float = 30.0
-    blue_accel: float = 10.0
+    # 2000 km/h -> km/s
+    blue_max_speed: float = 2000.0 / 3600.0  # ≈0.556 km/s
+    # 9g ≈ 88.3 m/s^2 ≈ 0.0883 km/s^2
+    blue_accel: float = 0.09  # km/s^2 (approx 9g)
 
     # Missile dynamics (proportional navigation style)
-    missile_speed: float = 50.0
+    # 4900 km/h -> km/s
+    missile_speed: float = 4900.0 / 3600.0  # ≈1.361 km/s
     num_missiles: int = 3
     nav_gain: float = 3.0  # base navigation gain for PN-like heading update
 
     # Interaction distances
-    hit_radius: float = 5.0
+    hit_radius: float = 0.015  # km (~15 m lethal radius)
 
     # Game-theoretic launcher parameters (Nash for initial launch positions)
     candidate_launch_count: int = 40  # how many candidate launch points are evaluated each reset
     num_blue_strategies: int = 8      # number of blue candidate escape headings in the static game
     fictitious_iters: int = 200       # iterations of fictitious play to approximate Nash
-    blue_escape_distance: float = 60.0  # assumed distance blue may move in the static game payoff
+    blue_escape_distance: float = 10.0  # assumed distance blue may move in the static game payoff (km)
 
     # Differential-game controller for PN gains
     use_diff_game: bool = True
@@ -41,6 +50,10 @@ class EnvConfig:
     diff_gain_max: float = 8.0        # upper bound on nav gains
     diff_w_dist: float = 1.0          # weight on distance term in running cost
     diff_w_gain: float = 0.01         # weight on nav gain regularization in running cost
+
+    # Logging / Tacview export
+    save_dir: str = "outputs"         # base directory for csv/acmi export
+    log_trajectories: bool = True     # whether to log trajectories to csv
 
 
 @dataclass

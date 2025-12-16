@@ -5,7 +5,8 @@ In this implementation, the red side's decision is to select launch positions
 for each missile inside a 3D box (the launch region). Given the blue aircraft's
 initial position, the launcher builds a *discrete zero-sum game* between:
 
-- Row player (red): chooses one of K candidate launch points;
+- Row player (red): chooses one of K candidate launch points within:
+    x in [0, 20] km, y in [-10, 10] km, z in [-10, 10] km;
 - Column player (blue): chooses one of B candidate initial escape headings.
 
 The payoff matrix entry A[i, j] is defined as the *distance* between the i-th
@@ -15,8 +16,7 @@ blue wants to MAXIMIZE it.
 
 We then compute an approximate Nash equilibrium of this zero-sum game using
 fictitious play, and sample red's launch positions from the equilibrium mixed
-strategy. This keeps the architecture modular: you can swap in a more accurate
-payoff model or a different Nash solver without touching the RL code.
+strategy.
 """
 
 from dataclasses import dataclass
@@ -26,13 +26,11 @@ import numpy as np
 
 @dataclass
 class LaunchRegion:
-    region_min: float
-    region_max: float
     num_missiles: int
     candidate_launch_count: int
     num_blue_strategies: int = 8
     fictitious_iters: int = 200
-    blue_escape_distance: float = 60.0
+    blue_escape_distance: float = 10.0  # km
 
 
 class GameTheoreticLauncher:
@@ -94,15 +92,18 @@ class GameTheoreticLauncher:
     # Internals
     # ------------------------------------------------------------------
     def _sample_candidates(self) -> np.ndarray:
-        """Sample candidate launch positions uniformly inside the cube region.
+        """Sample candidate launch positions in the specified 3D box.
+
+        x in [0, 20] km, y in [-10, 10] km, z in [-10, 10] km.
 
         Returns:
             positions: np.ndarray of shape (K, 3)
         """
-        low = self.region.region_min
-        high = self.region.region_max
         k = self.region.candidate_launch_count
-        return self.rng.uniform(low=low, high=high, size=(k, 3))
+        x = self.rng.uniform(0.0, 20.0, size=(k,))
+        y = self.rng.uniform(-10.0, 10.0, size=(k,))
+        z = self.rng.uniform(-10.0, 10.0, size=(k,))
+        return np.stack([x, y, z], axis=1)
 
     def _sample_blue_headings(self, blue_initial_pos: np.ndarray) -> np.ndarray:
         """Construct a set of candidate blue escape headings on the unit sphere.
@@ -171,8 +172,7 @@ class GameTheoreticLauncher:
         K = candidates.shape[0]
 
         # Predicted blue positions for each heading.
-        # We assume a fixed escape distance; time and speed are folded into this.
-        disp = self.region.blue_escape_distance
+        disp = self.region.blue_escape_distance  # km
         blue_future = blue_initial_pos[None, :] + disp * headings  # (B, 3)
 
         # Compute distances for all (i, j) pairs.

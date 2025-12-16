@@ -25,13 +25,15 @@ def update_blue_state(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Update the blue aircraft state.
 
+    Coordinates are in kilometers, time in seconds, speed in km/s.
+
     Args:
-        pos: (3,) current position
-        vel: (3,) current velocity
+        pos: (3,) current position [km]
+        vel: (3,) current velocity [km/s]
         action: discrete action id in {0..6}
-        dt: time step
-        accel_mag: magnitude of acceleration for non-zero actions
-        v_max: maximum speed
+        dt: time step [s]
+        accel_mag: magnitude of acceleration for non-zero actions [km/s^2]
+        v_max: maximum speed [km/s]
 
     Returns:
         new_pos, new_vel
@@ -84,12 +86,12 @@ def update_missiles_pn(
     rotated towards the instantaneous line-of-sight (LOS) to the target.
 
     Args:
-        missile_pos: (M, 3) missile positions
-        missile_vel: (M, 3) missile velocities
-        blue_pos: (3,) blue aircraft position
-        blue_vel: (3,) blue aircraft velocity (currently unused but kept for extensibility)
-        missile_speed: scalar missile speed (kept constant)
-        dt: time step
+        missile_pos: (M, 3) missile positions [km]
+        missile_vel: (M, 3) missile velocities [km/s]
+        blue_pos: (3,) blue aircraft position [km]
+        blue_vel: (3,) blue aircraft velocity [km/s] (currently unused but kept for extensibility)
+        missile_speed: scalar missile speed (kept constant) [km/s]
+        dt: time step [s]
         nav_gain: either a scalar gain N, or an array of shape (M,) with
             individual gains for each missile.
 

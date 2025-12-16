@@ -1,7 +1,7 @@
 
 """Differential-game-style controller for red missiles' PN gains.
 
-目标：引入一个“微分博弈”层，
+目标：在不大改项目结构的前提下，引入一个“微分博弈”层，
 对红方导弹的比例导引参数（导航增益 N）进行 *联合*、*实时* 调整。
 
 建模思路（离散近似）：
@@ -89,9 +89,6 @@ class DifferentialGameController:
         """
         nav_gains = np.asarray(nav_gains, dtype=float)
         M = nav_gains.shape[0]
-
-        # Compute current cost for reference.
-        base_cost = self._predict_cost(blue_pos, blue_vel, missile_pos, missile_vel, nav_gains, dt)
 
         grad = np.zeros_like(nav_gains)
         delta = self.dg_cfg.delta_gain

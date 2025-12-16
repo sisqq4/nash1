@@ -1,23 +1,29 @@
 
-"""Escape environment: blue aircraft vs. red missiles using PN guidance
-and a differential-game controller for navigation gains.
+"""Escape environment: blue aircraft vs. red missiles using PN guidance,
+a differential-game controller for navigation gains, and trajectory logging.
 
-- 导弹初始发射位置：由 `GameTheoreticLauncher` 通过一个离散零和博弈
-  (Nash 均衡) 决定；
-- 导弹在飞行过程中：使用 PN 导引追踪蓝机，PN 的导航增益向量
-  `nav_gains` 由 `DifferentialGameController` 在每个时间步根据微分博弈
-  思想进行联合调整；
-- 蓝机策略：由强化学习智能体学习的逃逸动作序列。
+场景设置（近似）：
+- 三枚雷达弹起始坐标均在：
+    x ∈ [0, 20] km, y ∈ [-10, 10] km, z ∈ [-10, 10] km；
+- 蓝方飞机起始坐标约为 [70, 0, 0] km，初始速度方向为任意，
+  速度模长约为 2000 km/h（≈0.556 km/s）；
+- 导弹最大速度约 4900 km/h（≈1.361 km/s），使用 PN 导引追踪蓝机；
+- 蓝机最大过载约 9g（通过内置加速度上限近似实现）；
+- 每枚导弹的 PN 导引增益由微分博弈控制器联合、实时调节。
 """
 
 from __future__ import annotations
 
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, List
+import os
+import math
+
 import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
 from .missile_dynamics import update_blue_state, update_missiles_pn
 from .diff_game_controller import DifferentialGameController
+from .acmi_io import write_csv
 from config import EnvConfig
 
 
@@ -29,8 +35,6 @@ class EscapeEnv:
         self.rng = np.random.default_rng(seed)
 
         region = LaunchRegion(
-            region_min=cfg.region_min,
-            region_max=cfg.region_max,
             num_missiles=cfg.num_missiles,
             candidate_launch_count=cfg.candidate_launch_count,
             num_blue_strategies=cfg.num_blue_strategies,
@@ -56,6 +60,19 @@ class EscapeEnv:
         self.observation_dim = 3 + 3 + 3 * cfg.num_missiles
         self.action_dim = 7  # 0: no acc, 1..6: +/-x,y,z
 
+        # Trajectory logging (for Tacview export)
+        self.log_enabled = bool(cfg.log_trajectories)
+        self.save_dir = cfg.save_dir
+        self.episode_index = 0
+        self.plane_global_id = 0
+        self.missile_global_id = 0
+
+        # Will be initialized in reset()
+        self._plane_track: List[List[float]] | None = None
+        self._plane_name: str | None = None
+        self._missile_tracks: List[List[List[float]]] | None = None
+        self._missile_names: List[str] | None = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -64,16 +81,23 @@ class EscapeEnv:
         self.t = 0
         self.done = False
 
-        # Sample blue position on a sphere of radius blue_init_radius,
-        # outside the red launch cube.
-        radius = self.cfg.blue_init_radius
-        # Sample random direction on unit sphere
-        v = self.rng.normal(size=3)
-        v /= np.linalg.norm(v)
-        self.blue_pos = v * radius
-        self.blue_vel = np.zeros(3, dtype=float)
+        # --- Blue initial state: fixed position [70, 0, 0] km,
+        #     random velocity direction with fixed speed norm. ---
+        self.blue_pos = np.array(
+            [self.cfg.blue_init_x, self.cfg.blue_init_y, self.cfg.blue_init_z],
+            dtype=float,
+        )
+        # Random unit direction
+        v_dir = self.rng.normal(size=3)
+        v_norm = np.linalg.norm(v_dir)
+        if v_norm < 1e-6:
+            v_dir = np.array([1.0, 0.0, 0.0])
+            v_norm = 1.0
+        v_dir /= v_norm
+        self.blue_vel = v_dir * self.cfg.blue_max_speed
 
-        # Compute red missile launch positions via game-theoretic launcher (Nash).
+        # --- Red missiles: Nash game to select launch positions inside
+        #     x:[0,20], y:[-10,10], z:[-10,10] km. ---
         launch_positions = self.launcher.compute_launch_positions(self.blue_pos)
         self.missile_pos = launch_positions.reshape(self.cfg.num_missiles, 3)
 
@@ -90,6 +114,13 @@ class EscapeEnv:
 
         # Reset nav gains to base value.
         self.nav_gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
+
+        # Initialize logging for this episode.
+        if self.log_enabled:
+            self._init_logging()
+
+            # Log initial state at t=0
+            self._log_current_state()
 
         return self._get_obs()
 
@@ -147,6 +178,10 @@ class EscapeEnv:
 
         self.t += 1
 
+        # Log state after this step
+        if self.log_enabled:
+            self._log_current_state()
+
         # 4) Compute distances and termination.
         dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
         min_dist = float(np.min(dists))
@@ -163,8 +198,12 @@ class EscapeEnv:
             self.done = True
         else:
             # Small shaping: encourage staying away from missiles.
-            # Normalize by some characteristic distance.
-            reward = 0.01 * (min_dist / (self.cfg.region_max - self.cfg.region_min))
+            # Normalize by characteristic distance (region_span).
+            reward = 0.01 * (min_dist / self.cfg.region_span)
+
+        # If episode just finished, flush logs to CSV.
+        if self.done and self.log_enabled:
+            self._flush_logs_to_csv()
 
         obs = self._get_obs()
         info: Dict[str, Any] = {
@@ -187,3 +226,93 @@ class EscapeEnv:
             axis=0,
         )
         return obs.astype(np.float32)
+
+    # ------------------------------------------------------------------
+    # Logging helpers
+    # ------------------------------------------------------------------
+    def _init_logging(self) -> None:
+        """Prepare trajectory containers and assign object IDs for this episode."""
+        self.episode_index += 1
+
+        # Plane: single blue aircraft
+        self.plane_global_id += 1
+        plane_id = self.plane_global_id
+        self._plane_name = f"plane_blue.{plane_id}.0"  # start_time=0
+
+        # Missiles: three red missiles
+        self._missile_tracks = []
+        self._missile_names = []
+        for _ in range(self.cfg.num_missiles):
+            self.missile_global_id += 1
+            mid = self.missile_global_id
+            name = f"missile_red.{mid}.0"  # start_time=0
+            self._missile_names.append(name)
+            self._missile_tracks.append([])
+
+        self._plane_track = []
+
+    def _compute_orientation(self, vel: np.ndarray) -> Tuple[float, float, float]:
+        """Compute (roll, pitch, yaw) in degrees from velocity vector.
+
+        This is a simple kinematic approximation:
+            yaw   = atan2(v_y, v_x)
+            pitch = atan2(v_z, sqrt(v_x^2 + v_y^2))
+            roll  = 0 (not modeled)
+        """
+        vx, vy, vz = vel
+        # avoid division by zero
+        horiz = math.sqrt(vx * vx + vy * vy)
+        yaw = math.degrees(math.atan2(vy, vx))
+        pitch = math.degrees(math.atan2(vz, horiz))
+        roll = 0.0
+        return roll, pitch, yaw
+
+    def _log_current_state(self) -> None:
+        if self._plane_track is None or self._missile_tracks is None:
+            return
+
+        # Plane
+        roll, pitch, yaw = self._compute_orientation(self.blue_vel)
+        self._plane_track.append([
+            float(self.blue_pos[0]),
+            float(self.blue_pos[1]),
+            float(self.blue_pos[2]),
+            roll,
+            pitch,
+            yaw,
+        ])
+
+        # Missiles
+        for i in range(self.cfg.num_missiles):
+            m_pos = self.missile_pos[i]
+            m_vel = self.missile_vel[i]
+            roll_m, pitch_m, yaw_m = self._compute_orientation(m_vel)
+            self._missile_tracks[i].append([
+                float(m_pos[0]),
+                float(m_pos[1]),
+                float(m_pos[2]),
+                roll_m,
+                pitch_m,
+                yaw_m,
+            ])
+
+    def _flush_logs_to_csv(self) -> None:
+        if self._plane_track is None or self._missile_tracks is None:
+            return
+        if self._plane_name is None or self._missile_names is None:
+            return
+
+        # Write plane track
+        if self._plane_track:
+            write_csv(self.cfg.save_dir, self._plane_name, self._plane_track)
+
+        # Write missiles
+        for track, name in zip(self._missile_tracks, self._missile_names):
+            if track:
+                write_csv(self.cfg.save_dir, name, track)
+
+        # Clear references
+        self._plane_track = None
+        self._missile_tracks = None
+        self._plane_name = None
+        self._missile_names = None

@@ -3,7 +3,7 @@
 
 This script wires together:
 - the EscapeEnv environment (red missiles + PN guidance + Nash launcher +
-  differential-game controller for nav gains),
+  differential-game controller for nav gains + trajectory logging),
 - the DQNAgent (blue reinforcement learning agent),
 - and a simple training loop.
 
@@ -19,6 +19,7 @@ Requirements:
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Tuple
 
@@ -27,6 +28,7 @@ import torch
 
 from config import EnvConfig, TrainConfig
 from env.escape_env import EscapeEnv
+from env.acmi_io import write_acmi
 from agent.dqn_agent import DQNAgent, DQNConfig
 
 
@@ -59,6 +61,10 @@ def make_env_and_agent(
 def train():
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
+
+    # Ensure save_dir exists
+    if env_cfg.log_trajectories:
+        os.makedirs(env_cfg.save_dir, exist_ok=True)
 
     env, agent = make_env_and_agent(env_cfg, train_cfg, seed=0)
 
@@ -93,6 +99,12 @@ def train():
             )
 
     print("Training finished.")
+
+    # After training, convert all csv trajectories to a single ACMI file.
+    if env_cfg.log_trajectories:
+        print("Converting CSV logs to Tacview ACMI...")
+        write_acmi(target_name="session", save_dir=env_cfg.save_dir, time_unit=env_cfg.dt, explode_time=10)
+        print(f"ACMI file written to {os.path.join(env_cfg.save_dir, 'acmi', 'session.acmi')}")
 
 
 if __name__ == "__main__":
