@@ -102,7 +102,7 @@ class GameTheoreticLauncher:
         k = self.region.candidate_launch_count
         x = self.rng.uniform(0.0, 20.0, size=(k,))
         y = self.rng.uniform(-10.0, 10.0, size=(k,))
-        z = self.rng.uniform(-10.0, 10.0, size=(k,))
+        z = self.rng.uniform(0, 10.0, size=(k,))
         return np.stack([x, y, z], axis=1)
 
     def _sample_blue_headings(self, blue_initial_pos: np.ndarray) -> np.ndarray:

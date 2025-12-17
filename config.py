@@ -15,7 +15,7 @@ class EnvConfig:
     # Blue aircraft initial position (km)
     blue_init_x: float = 70.0
     blue_init_y: float = 0.0
-    blue_init_z: float = 0.0
+    blue_init_z: float = 5.0
 
     # Simulation parameters
     dt: float = 1.0          # [s] time step
