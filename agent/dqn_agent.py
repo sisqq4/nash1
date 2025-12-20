@@ -1,9 +1,5 @@
 
-"""DQN agent for the blue escape policy.
-
-This is a small, self-contained DQN implementation using PyTorch.
-It assumes a continuous observation vector and a discrete action space.
-"""
+"""DQN agent for the blue escape policy."""
 
 from __future__ import annotations
 
@@ -44,7 +40,7 @@ class DQNConfig:
     start_learning: int = 1_000
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
-    epsilon_decay: int = 20_000  # in steps
+    epsilon_decay: int = 20_000
     target_update_interval: int = 1_000
     device: str = "cpu"
 
@@ -66,7 +62,6 @@ class DQNAgent:
         self.batch_size = cfg.batch_size
         self.start_learning = cfg.start_learning
 
-        # Epsilon-greedy exploration
         self.epsilon_start = cfg.epsilon_start
         self.epsilon_end = cfg.epsilon_end
         self.epsilon_decay = cfg.epsilon_decay
@@ -74,24 +69,22 @@ class DQNAgent:
 
         self.target_update_interval = cfg.target_update_interval
 
-    # --------------------------------------------------------------
+    def _epsilon(self, eval_mode: bool) -> float:
+        if eval_mode:
+            return 0.0
+        frac = min(1.0, self.total_steps / max(1, self.epsilon_decay))
+        return self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
+
     def select_action(self, obs: np.ndarray, eval_mode: bool = False) -> int:
-        """Select an action with epsilon-greedy exploration."""
         self.total_steps += 1
 
-        if eval_mode:
-            epsilon = 0.0
-        else:
-            # Linear decay of epsilon
-            frac = min(1.0, self.total_steps / max(1, self.epsilon_decay))
-            epsilon = self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
-
-        if not eval_mode and np.random.rand() < epsilon:
+        eps = self._epsilon(eval_mode)
+        if not eval_mode and np.random.rand() < eps:
             return int(np.random.randint(0, self.cfg.action_dim))
 
-        obs_tensor = torch.from_numpy(obs).float().unsqueeze(0).to(self.device)
+        obs_t = torch.from_numpy(obs).float().unsqueeze(0).to(self.device)
         with torch.no_grad():
-            q_values = self.q_net(obs_tensor)  # (1, A)
+            q_values = self.q_net(obs_t)
         action = int(torch.argmax(q_values, dim=1).item())
         return action
 
@@ -105,13 +98,7 @@ class DQNAgent:
     ) -> None:
         self.replay.store(obs, act, rew, next_obs, done)
 
-    # --------------------------------------------------------------
     def update(self) -> Optional[float]:
-        """Perform one gradient update step if there is enough data.
-
-        Returns:
-            loss value if an update was performed, else None.
-        """
         if self.replay.size < self.start_learning:
             return None
         if not self.replay.can_sample(self.batch_size):
@@ -125,13 +112,11 @@ class DQNAgent:
         next_obs_t = torch.from_numpy(next_obs).float().to(self.device)
         done_t = torch.from_numpy(done).float().to(self.device)
 
-        # Compute current Q-values.
-        q_values = self.q_net(obs_t)  # (B, A)
-        q_sa = q_values.gather(1, act_t.unsqueeze(1)).squeeze(1)  # (B,)
+        q_values = self.q_net(obs_t)
+        q_sa = q_values.gather(1, act_t.unsqueeze(1)).squeeze(1)
 
-        # Compute target Q-values.
         with torch.no_grad():
-            next_q_values = self.target_q_net(next_obs_t)  # (B, A)
+            next_q_values = self.target_q_net(next_obs_t)
             next_q_max, _ = torch.max(next_q_values, dim=1)
             target = rew_t + self.gamma * (1.0 - done_t) * next_q_max
 
@@ -141,7 +126,6 @@ class DQNAgent:
         loss.backward()
         self.optimizer.step()
 
-        # Periodically update target network.
         if self.total_steps % self.target_update_interval == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
 

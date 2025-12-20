@@ -1,21 +1,5 @@
 
-"""Training script for the blue escape agent.
-
-This script wires together:
-- the EscapeEnv environment (red missiles + PN guidance + Nash launcher +
-  differential-game controller for nav gains + trajectory logging),
-- the DQNAgent (blue reinforcement learning agent),
-- and a simple training loop.
-
-Usage (from project root):
-
-    python train_blue_agent.py
-
-Requirements:
-    - Python 3.9+
-    - numpy
-    - torch
-"""
+"""Training script for the blue escape agent."""
 
 from __future__ import annotations
 
@@ -58,7 +42,7 @@ def make_env_and_agent(
     return env, agent
 
 
-def train():
+def train() -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
 
@@ -90,14 +74,14 @@ def train():
         episode_rewards.append(ep_reward)
 
         if ep % train_cfg.print_interval == 0:
-            avg_reward = sum(episode_rewards[-train_cfg.print_interval:]) / train_cfg.print_interval
+            avg_reward = sum(episode_rewards[-train_cfg.print_interval :]) / train_cfg.print_interval
             elapsed = time.time() - start_time
             print(
-                f"Episode {ep:4d} | avg_reward (last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
+                f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
                 f"steps = {global_step:6d} | elapsed = {elapsed:6.1f}s"
             )
 
-        # Every 10 episodes, convert that episode's CSV into a Tacview ACMI
+        # Every 10 episodes, convert this episode to a Tacview ACMI
         if env_cfg.log_trajectories and ep % 10 == 0:
             csv_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
             if os.path.isdir(csv_dir):
@@ -113,12 +97,6 @@ def train():
                 print(f"[ACMI] Episode {ep}: csv dir {csv_dir} not found, skip.")
 
     print("Training finished.")
-
-    # After training, convert all csv trajectories to a single ACMI file.
-    # if env_cfg.log_trajectories:
-    #     print("Converting CSV logs to Tacview ACMI...")
-    #     write_acmi(target_name="session", save_dir=env_cfg.save_dir, time_unit=env_cfg.dt, explode_time=10)
-    #     print(f"ACMI file written to {os.path.join(env_cfg.save_dir, 'acmi', 'session.acmi')}")
 
 
 if __name__ == "__main__":

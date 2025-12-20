@@ -1,21 +1,9 @@
 
-"""Escape environment: blue aircraft vs. red missiles using PN guidance,
-a differential-game controller for navigation gains, and trajectory logging.
-
-场景设置（近似）：
-- 三枚雷达弹起始坐标均在：
-    x ∈ [0, 20] km, y ∈ [-10, 10] km, z ∈ [-10, 10] km；
-- 蓝方飞机起始坐标约为 [70, 0, 0] km，初始速度方向为任意，
-  速度模长约为 2000 km/h（≈0.556 km/s）；
-- 导弹最大速度约 4900 km/h（≈1.361 km/s），使用 PN 导引追踪蓝机；
-- 蓝机最大过载约 9g（通过内置加速度上限近似实现）；
-- 每枚导弹的 PN 导引增益由微分博弈控制器联合、实时调节。
-"""
+"""3D escape environment: blue aircraft vs. three red missiles."""
 
 from __future__ import annotations
 
 from typing import Dict, Tuple, Any, List
-import os
 import math
 
 import numpy as np
@@ -28,8 +16,6 @@ from config import EnvConfig
 
 
 class EscapeEnv:
-    """3D escape environment for training the blue RL agent."""
-
     def __init__(self, cfg: EnvConfig, seed: int | None = None) -> None:
         self.cfg = cfg
         self.rng = np.random.default_rng(seed)
@@ -40,57 +26,63 @@ class EscapeEnv:
             num_blue_strategies=cfg.num_blue_strategies,
             fictitious_iters=cfg.fictitious_iters,
             blue_escape_distance=cfg.blue_escape_distance,
+            max_launch_time=cfg.max_launch_time,
+            min_launch_interval=cfg.min_launch_interval,
         )
         self.launcher = GameTheoreticLauncher(region, rng=self.rng)
         self.diff_ctrl = DifferentialGameController(cfg) if cfg.use_diff_game else None
 
-        # Internal simulation state
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
-        self.missile_pos = np.zeros((cfg.num_missiles, 3), dtype=float)
-        self.missile_vel = np.zeros((cfg.num_missiles, 3), dtype=float)
-        # Navigation gains for each missile (jointly updated by diff-game controller).
-        self.nav_gains = np.full(cfg.num_missiles, cfg.nav_gain, dtype=float)
 
-        # Missile lifetime / energy tracking
-        self.missile_alive = np.ones(cfg.num_missiles, dtype=bool)
-        self.missile_time_alive = np.zeros(cfg.num_missiles, dtype=float)
+        M = cfg.num_missiles
+        self.missile_pos = np.zeros((M, 3), dtype=float)
+        self.missile_vel = np.zeros((M, 3), dtype=float)
+        self.nav_gains = np.full(M, cfg.nav_gain, dtype=float)
 
-        self.t = 0
+        # Launch and lifetime
+        self.missile_launch_times = np.zeros(M, dtype=float)
+        self.missile_launched = np.zeros(M, dtype=bool)
+        self.missile_alive = np.ones(M, dtype=bool)
+        self.missile_time_alive = np.zeros(M, dtype=float)
+
+        self.step_count = 0
+        self.time = 0.0
         self.done = False
 
-        # Pre-compute state dimension and action space size
-        # State: [blue_pos(3), blue_vel(3), missile_rel_pos(3*M)]
-        self.observation_dim = 3 + 3 + 3 * cfg.num_missiles
-        self.action_dim = 7  # 0: no acc, 1..6: +/-x,y,z
+        # Observation: blue pos (3) + blue vel (3) + rel missile pos (3*M)
+        self.observation_dim = 3 + 3 + 3 * M
+        self.action_dim = 7
 
-        # Trajectory logging (for Tacview export)
+        # Logging / episode indexing
         self.log_enabled = bool(cfg.log_trajectories)
         self.save_dir = cfg.save_dir
         self.episode_index = 0
         self.plane_global_id = 0
         self.missile_global_id = 0
 
-        # Will be initialized in reset()
         self._plane_track: List[List[float]] | None = None
         self._plane_name: str | None = None
         self._missile_tracks: List[List[List[float]]] | None = None
         self._missile_names: List[str] | None = None
 
     # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
     def reset(self) -> np.ndarray:
-        """Reset environment and return initial observation."""
-        self.t = 0
+        self.step_count = 0
+        self.time = 0.0
         self.done = False
 
-        # --- Blue initial state: fixed position [70, 0, 5] km,
-        #     random velocity direction with fixed speed norm. ---
+        # Blue initial position: random in box
         self.blue_pos = np.array(
-            [self.cfg.blue_init_x, self.cfg.blue_init_y, self.cfg.blue_init_z],
+            [
+                self.rng.uniform(self.cfg.blue_x_min, self.cfg.blue_x_max),
+                self.rng.uniform(self.cfg.blue_y_min, self.cfg.blue_y_max),
+                self.rng.uniform(self.cfg.blue_z_min, self.cfg.blue_z_max),
+            ],
             dtype=float,
         )
+
+        # Random initial velocity direction with max speed
         v_dir = self.rng.normal(size=3)
         v_norm = np.linalg.norm(v_dir)
         if v_norm < 1e-6:
@@ -99,24 +91,24 @@ class EscapeEnv:
         v_dir /= v_norm
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
-        # Red missiles: Nash launcher for positions
-        launch_positions = self.launcher.compute_launch_positions(self.blue_pos)
-        self.missile_pos = launch_positions.reshape(self.cfg.num_missiles, 3)
+        # Red: matrix game for launch positions + times
+        launch_pos, launch_times = self.launcher.compute_launch_plan(
+            blue_initial_pos=self.blue_pos,
+            blue_speed=self.cfg.blue_max_speed,
+            missile_speed=self.cfg.missile_speed,
+        )
 
-        # Initial missile velocities towards blue aircraft
-        self.missile_vel = np.zeros_like(self.missile_pos)
-        for i in range(self.cfg.num_missiles):
-            direction = self.blue_pos - self.missile_pos[i]
-            norm = np.linalg.norm(direction)
-            if norm < 1e-6:
-                direction = np.array([1.0, 0.0, 0.0])
-                norm = 1.0
-            direction /= norm
-            self.missile_vel[i] = direction * self.cfg.missile_speed
+        self.missile_pos = launch_pos.reshape(self.cfg.num_missiles, 3)
+        self.missile_launch_times = launch_times.astype(float)
+        self.missile_launched[:] = False
 
-        self.nav_gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
+        # Velocities start at zero (not yet launched)
+        self.missile_vel.fill(0.0)
 
-        # Reset missile lifetime
+        # Navigation gains
+        self.nav_gains.fill(self.cfg.nav_gain)
+
+        # Lifetime
         self.missile_alive[:] = True
         self.missile_time_alive[:] = 0.0
 
@@ -129,58 +121,79 @@ class EscapeEnv:
     # ------------------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         if self.done:
-            raise RuntimeError("Call reset() before stepping a finished episode.")
+            raise RuntimeError("reset() must be called before stepping a finished episode")
 
-        if not (0 <= int(action) < self.action_dim):
-            raise ValueError(f"Invalid action {action}, expected in [0, {self.action_dim - 1}].")
+        action = int(action)
+        if not (0 <= action < self.action_dim):
+            raise ValueError(f"Invalid action {action}")
 
-        # Save previous positions for line-sphere hit checking
+        dt = self.cfg.dt
+
         prev_blue_pos = self.blue_pos.copy()
         prev_missile_pos = self.missile_pos.copy()
 
-        # 1) Update blue state
+        # 1) Update blue aircraft
         self.blue_pos, self.blue_vel = update_blue_state(
             self.blue_pos,
             self.blue_vel,
-            int(action),
-            dt=self.cfg.dt,
+            action,
+            dt=dt,
             accel_mag=self.cfg.blue_accel,
             v_max=self.cfg.blue_max_speed,
         )
 
-        # 2) Update navigation gains via differential-game controller (only for alive missiles)
+        # 2) Update time and possibly launch new missiles
+        self.step_count += 1
+        self.time += dt
+
+        for i in range(self.cfg.num_missiles):
+            if (not self.missile_launched[i]) and self.time >= self.missile_launch_times[i]:
+                # Launch missile i now: set initial velocity toward current blue position
+                direction = self.blue_pos - self.missile_pos[i]
+                n = np.linalg.norm(direction)
+                if n < 1e-6:
+                    direction = np.array([1.0, 0.0, 0.0])
+                    n = 1.0
+                direction /= n
+                self.missile_vel[i] = direction * self.cfg.missile_speed
+                self.missile_launched[i] = True
+                # Lifetime starts counting from launch
+                self.missile_time_alive[i] = 0.0
+
+        # 3) Differential-game update of nav_gains for launched & alive missiles
         if self.diff_ctrl is not None:
-            nav_input = self.nav_gains.copy()
-            nav_input[~self.missile_alive] = 0.0
-            new_nav = self.diff_ctrl.update_nav_gains(
+            idx = np.where(self.missile_launched & self.missile_alive)[0]
+            if idx.size > 0:
+                nav_sub = self.nav_gains[idx].copy()
+                new_nav = self.diff_ctrl.update_nav_gains(
+                    self.blue_pos,
+                    self.blue_vel,
+                    self.missile_pos[idx],
+                    self.missile_vel[idx],
+                    nav_sub,
+                    dt,
+                )
+                self.nav_gains[idx] = new_nav
+                # Non-alive missiles keep nav_gain = 0
+                self.nav_gains[~self.missile_alive] = 0.0
+
+        # 4) PN update for launched missiles
+        idx_launched = np.where(self.missile_launched)[0]
+        if idx_launched.size > 0:
+            sub_pos, sub_vel = update_missiles_pn(
+                self.missile_pos[idx_launched],
+                self.missile_vel[idx_launched],
                 self.blue_pos,
                 self.blue_vel,
-                self.missile_pos,
-                self.missile_vel,
-                nav_input,
-                self.cfg.dt,
+                self.cfg.missile_speed,
+                dt,
+                self.nav_gains[idx_launched],
             )
-            # Apply only to alive missiles; dead missiles keep nav_gain = 0
-            self.nav_gains[self.missile_alive] = new_nav[self.missile_alive]
-            self.nav_gains[~self.missile_alive] = 0.0
+            self.missile_pos[idx_launched] = sub_pos
+            self.missile_vel[idx_launched] = sub_vel
 
-        # 3) PN guidance update for missiles (nav_gain = 0 for dead missiles => ballistic)
-        self.missile_pos, self.missile_vel = update_missiles_pn(
-            self.missile_pos,
-            self.missile_vel,
-            self.blue_pos,
-            self.blue_vel,
-            self.cfg.missile_speed,
-            self.cfg.dt,
-            self.nav_gains,
-        )
-
-        self.t += 1
-
-        # 3b) Update missile lifetime / energy
-        dt = self.cfg.dt
-        self.missile_time_alive[self.missile_alive] += dt
-        # When flight time exceeds limit, missile can no longer navigate (nav_gain = 0)
+        # 5) Update missile lifetime / energy
+        self.missile_time_alive[self.missile_launched & self.missile_alive] += dt
         expired = self.missile_time_alive >= self.cfg.missile_max_flight_time
         self.missile_alive[expired] = False
         self.nav_gains[expired] = 0.0
@@ -188,12 +201,11 @@ class EscapeEnv:
         if self.log_enabled:
             self._log_current_state()
 
-        # 4) Hit detection using segment-sphere intersection in relative coordinates
+        # 6) Hit detection (only for launched missiles) using line-segment / sphere
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
 
-        timeout = self.t >= self.cfg.max_steps
+        timeout = self.step_count >= self.cfg.max_steps
 
-        reward = 0.0
         if hit:
             reward = -1.0
             self.done = True
@@ -201,7 +213,6 @@ class EscapeEnv:
             reward = 1.0
             self.done = True
         else:
-            # shaping: encourage larger min distance
             reward = 0.01 * (min_dist / self.cfg.region_span)
 
         if self.done and self.log_enabled:
@@ -209,13 +220,16 @@ class EscapeEnv:
 
         obs = self._get_obs()
         info: Dict[str, Any] = {
-            "t": self.t,
+            "time": float(self.time),
+            "step": int(self.step_count),
             "min_dist": float(min_dist),
             "hit": bool(hit),
             "timeout": bool(timeout),
             "nav_gains": self.nav_gains.copy(),
             "missile_alive": self.missile_alive.copy(),
+            "missile_launched": self.missile_launched.copy(),
             "missile_time_alive": self.missile_time_alive.copy(),
+            "launch_times": self.missile_launch_times.copy(),
         }
         return obs, float(reward), bool(self.done), info
 
@@ -237,12 +251,6 @@ class EscapeEnv:
         r1: np.ndarray,
         radius: float,
     ) -> Tuple[bool, float]:
-        """Check if segment [r0, r1] hits a sphere of radius around origin.
-
-        r0, r1: relative position vectors missile - blue at previous / current step.
-        Returns (hit, min_distance) where min_distance is the minimal distance
-        from the segment to the origin.
-        """
         d = r1 - r0
         a = float(np.dot(d, d))
         if a < 1e-12:
@@ -265,6 +273,9 @@ class EscapeEnv:
         min_dist = float("inf")
 
         for i in range(self.cfg.num_missiles):
+            if not self.missile_launched[i]:
+                continue
+
             r0 = prev_missile_pos[i] - prev_blue_pos
             r1 = self.missile_pos[i] - self.blue_pos
 
@@ -276,8 +287,15 @@ class EscapeEnv:
                 break
 
         if not np.isfinite(min_dist):
-            dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
-            min_dist = float(np.min(dists))
+            # Fallback: current closest distance
+            dists = np.linalg.norm(
+                self.missile_pos[self.missile_launched] - self.blue_pos[None, :],
+                axis=1,
+            )
+            if dists.size > 0:
+                min_dist = float(np.min(dists))
+            else:
+                min_dist = self.cfg.region_span
         return hit_any, min_dist
 
     # ------------------------------------------------------------------
@@ -314,32 +332,39 @@ class EscapeEnv:
             return
 
         roll, pitch, yaw = self._compute_orientation(self.blue_vel)
-        self._plane_track.append([
-            float(self.blue_pos[0]),
-            float(self.blue_pos[1]),
-            float(self.blue_pos[2]),
-            roll,
-            pitch,
-            yaw,
-        ])
+        self._plane_track.append(
+            [
+                float(self.blue_pos[0]),
+                float(self.blue_pos[1]),
+                float(self.blue_pos[2]),
+                roll,
+                pitch,
+                yaw,
+            ]
+        )
 
         for i in range(self.cfg.num_missiles):
             m_pos = self.missile_pos[i]
             m_vel = self.missile_vel[i]
             roll_m, pitch_m, yaw_m = self._compute_orientation(m_vel)
-            self._missile_tracks[i].append([
-                float(m_pos[0]),
-                float(m_pos[1]),
-                float(m_pos[2]),
-                roll_m,
-                pitch_m,
-                yaw_m,
-            ])
+            self._missile_tracks[i].append(
+                [
+                    float(m_pos[0]),
+                    float(m_pos[1]),
+                    float(m_pos[2]),
+                    roll_m,
+                    pitch_m,
+                    yaw_m,
+                ]
+            )
 
     def _flush_logs_to_csv(self) -> None:
-        if self._plane_track is None or self._missile_tracks is None:
-            return
-        if self._plane_name is None or self._missile_names is None:
+        if (
+            self._plane_track is None
+            or self._missile_tracks is None
+            or self._plane_name is None
+            or self._missile_names is None
+        ):
             return
 
         ep_idx = self.episode_index

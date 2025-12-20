@@ -1,23 +1,5 @@
 
-"""Game-theoretic launcher for the red missiles (Nash-based).
-
-In this implementation, the red side's decision is to select launch positions
-for each missile inside a 3D box (the launch region). Given the blue aircraft's
-initial position, the launcher builds a *discrete zero-sum game* between:
-
-- Row player (red): chooses one of K candidate launch points within:
-    x in [0, 20] km, y in [-10, 10] km, z in [-10, 10] km;
-- Column player (blue): chooses one of B candidate initial escape headings.
-
-The payoff matrix entry A[i, j] is defined as the *distance* between the i-th
-candidate launch point and the blue aircraft's *predicted position* after a
-short escape maneuver along heading j. Red wants to MINIMIZE this distance,
-blue wants to MAXIMIZE it.
-
-We then compute an approximate Nash equilibrium of this zero-sum game using
-fictitious play, and sample red's launch positions from the equilibrium mixed
-strategy.
-"""
+"""Game-theoretic launcher for red missiles (position + launch time)."""
 
 from dataclasses import dataclass
 from typing import Tuple
@@ -30,84 +12,100 @@ class LaunchRegion:
     candidate_launch_count: int
     num_blue_strategies: int = 8
     fictitious_iters: int = 200
-    blue_escape_distance: float = 10.0  # km
+    blue_escape_distance: float = 10.0  # km, only for shaping
+    max_launch_time: float = 8.0        # [s]
+    min_launch_interval: float = 1.0    # [s]
 
 
 class GameTheoreticLauncher:
-    """Compute red's launch positions from a zero-sum Nash game.
-
-    Interface:
-        launcher = GameTheoreticLauncher(region_cfg)
-        launch_positions = launcher.compute_launch_positions(blue_initial_pos)
-
-    where `launch_positions` has shape (num_missiles, 3).
-    """
-
     def __init__(self, region: LaunchRegion, rng: np.random.Generator | None = None) -> None:
         self.region = region
         self.rng = rng or np.random.default_rng()
 
     # ------------------------------------------------------------------
-    # Public API
+    # Public interface
     # ------------------------------------------------------------------
-    def compute_launch_positions(self, blue_initial_pos: np.ndarray) -> np.ndarray:
-        """Return num_missiles launch positions inside the region.
-
-        Args:
-            blue_initial_pos: array-like of shape (3,)
+    def compute_launch_plan(
+        self,
+        blue_initial_pos: np.ndarray,
+        blue_speed: float,
+        missile_speed: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Return optimal (approximate) launch positions and times.
 
         Returns:
-            positions: np.ndarray of shape (num_missiles, 3)
+            launch_pos: (M, 3)
+            launch_times: (M,) in seconds, strictly increasing with
+                at least min_launch_interval separation.
         """
-        blue_initial_pos = np.asarray(blue_initial_pos, dtype=float).reshape(3)
-        candidates = self._sample_candidates()  # (K, 3)
+        M = self.region.num_missiles
+        launch_pos = np.zeros((M, 3), dtype=float)
+        launch_times = np.zeros(M, dtype=float)
 
-        # Build zero-sum payoff matrix and approximate Nash equilibrium for red.
-        A = self._build_payoff_matrix(candidates, blue_initial_pos)
-        red_mixed = self._fictitious_play_minimax(A)
+        chosen_times: list[float] = []
 
-        # Sample missiles' launch positions from red's equilibrium mixed strategy.
-        K = candidates.shape[0]
-        probs = np.maximum(red_mixed, 0.0)
-        if probs.sum() <= 0:
-            probs = np.ones(K, dtype=float) / K
-        else:
-            probs = probs / probs.sum()
+        time_grid = np.arange(0.0, self.region.max_launch_time + 1e-6, 1.0)
 
-        # Ensure we don't request more distinct samples than non-zero support
-        # when using replace=False.
-        nonzero = int((probs > 1e-12).sum())
-        replace = self.region.num_missiles > nonzero
+        for m in range(M):
+            allowed_times = self._filter_times(time_grid, chosen_times)
+            if len(allowed_times) == 0:
+                # Fallback: if constraints are too tight, ignore interval constraint
+                allowed_times = list(time_grid)
 
-        idx = self.rng.choice(K, size=self.region.num_missiles, replace=replace, p=probs)
-        return candidates[idx]
+            K = self.region.candidate_launch_count
+            cand_pos = self._sample_positions(K)
+            cand_times = self._sample_times(K, allowed_times)
+
+            A = self._build_payoff_matrix_for_missile(
+                cand_pos,
+                cand_times,
+                blue_initial_pos,
+                blue_speed,
+                missile_speed,
+            )
+            red_mixed = self._fictitious_play_minimax(A)
+
+            idx = self._sample_row_from_mixed(red_mixed)
+            launch_pos[m] = cand_pos[idx]
+            t_sel = float(cand_times[idx])
+            launch_times[m] = t_sel
+            chosen_times.append(t_sel)
+
+        # Ensure non-decreasing launch times
+        order = np.argsort(launch_times)
+        launch_times = launch_times[order]
+        launch_pos = launch_pos[order]
+        return launch_pos, launch_times
 
     # ------------------------------------------------------------------
-    # Internals
+    # Helpers
     # ------------------------------------------------------------------
-    def _sample_candidates(self) -> np.ndarray:
-        """Sample candidate launch positions in the specified 3D box.
-
-        x in [0, 20] km, y in [-10, 10] km, z in [-10, 10] km.
-
-        Returns:
-            positions: np.ndarray of shape (K, 3)
-        """
-        k = self.region.candidate_launch_count
-        x = self.rng.uniform(0.0, 20.0, size=(k,))
-        y = self.rng.uniform(-10.0, 10.0, size=(k,))
-        z = self.rng.uniform(0, 10.0, size=(k,))
+    def _sample_positions(self, K: int) -> np.ndarray:
+        x = self.rng.uniform(0.0, 20.0, size=(K,))
+        y = self.rng.uniform(-10.0, 10.0, size=(K,))
+        z = self.rng.uniform(-10.0, 10.0, size=(K,))
         return np.stack([x, y, z], axis=1)
 
+    def _sample_times(self, K: int, allowed_times: list[float]) -> np.ndarray:
+        idx = self.rng.integers(0, len(allowed_times), size=K)
+        arr = np.array([allowed_times[i] for i in idx], dtype=float)
+        return arr
+
+    def _filter_times(self, time_grid: np.ndarray, chosen_times: list[float]) -> list[float]:
+        if not chosen_times:
+            return list(time_grid)
+        out: list[float] = []
+        for t in time_grid:
+            ok = True
+            for t_prev in chosen_times:
+                if abs(t - t_prev) < self.region.min_launch_interval:
+                    ok = False
+                    break
+            if ok:
+                out.append(float(t))
+        return out
+
     def _sample_blue_headings(self, blue_initial_pos: np.ndarray) -> np.ndarray:
-        """Construct a set of candidate blue escape headings on the unit sphere.
-
-        We use a small, fixed set of canonical directions (±x, ±y, ±z) plus
-        the radial direction from the origin through the blue position.
-
-        Returns:
-            headings: (B, 3) unit vectors
-        """
         base_dirs = [
             np.array([1.0, 0.0, 0.0]),
             np.array([-1.0, 0.0, 0.0]),
@@ -117,7 +115,6 @@ class GameTheoreticLauncher:
             np.array([0.0, 0.0, -1.0]),
         ]
 
-        # Radial direction from origin through blue position (outward).
         bp = np.asarray(blue_initial_pos, dtype=float)
         norm_bp = np.linalg.norm(bp)
         if norm_bp > 1e-6:
@@ -125,11 +122,8 @@ class GameTheoreticLauncher:
         else:
             radial = np.array([1.0, 0.0, 0.0])
         base_dirs.append(radial)
-
-        # Optionally add inward radial direction.
         base_dirs.append(-radial)
 
-        # Normalize and assemble.
         dirs = []
         for d in base_dirs:
             n = np.linalg.norm(d)
@@ -137,81 +131,92 @@ class GameTheoreticLauncher:
                 continue
             dirs.append(d / n)
 
-        # Ensure we have at least one heading.
         if not dirs:
             dirs = [np.array([1.0, 0.0, 0.0])]
 
         dirs = np.stack(dirs, axis=0)
         D = dirs.shape[0]
         B = self.region.num_blue_strategies
-
         if B <= D:
             return dirs[:B]
         idx = self.rng.integers(0, D, size=B)
         return dirs[idx]
 
-    def _build_payoff_matrix(self, candidates: np.ndarray, blue_initial_pos: np.ndarray) -> np.ndarray:
-        """Construct payoff matrix A for the zero-sum game.
+    def _build_payoff_matrix_for_missile(
+        self,
+        cand_pos: np.ndarray,
+        cand_times: np.ndarray,
+        blue_initial_pos: np.ndarray,
+        blue_speed: float,
+        missile_speed: float,
+    ) -> np.ndarray:
+        """Build K x B payoff matrix for one missile.
 
-        A[i, j] = distance between candidate i and the predicted blue position
-        after it moves along heading j for a fixed escape distance.
-
-        Returns:
-            A: np.ndarray of shape (K, B)
+        Payoff is approximate distance between missile launch point and
+        blue predicted position at an estimated intercept time.
         """
-        headings = self._sample_blue_headings(blue_initial_pos)  # (B, 3)
+        K = cand_pos.shape[0]
+        headings = self._sample_blue_headings(blue_initial_pos)
         B = headings.shape[0]
-        K = candidates.shape[0]
 
-        # Predicted blue positions for each heading.
-        disp = self.region.blue_escape_distance  # km
-        blue_future = blue_initial_pos[None, :] + disp * headings  # (B, 3)
-
-        # Compute distances for all (i, j) pairs.
         A = np.zeros((K, B), dtype=float)
+        blue_initial_pos = np.asarray(blue_initial_pos, dtype=float)
+
         for i in range(K):
-            p = candidates[i][None, :]  # (1, 3)
-            diffs = p - blue_future  # (B, 3)
-            dists = np.linalg.norm(diffs, axis=1)  # (B,)
-            A[i, :] = dists
+            p = cand_pos[i]
+            t_launch = float(cand_times[i])
+
+            r0 = p - blue_initial_pos
+            d0 = float(np.linalg.norm(r0))
+            if missile_speed <= 1e-6:
+                tof = 0.0
+            else:
+                tof = d0 / missile_speed
+
+            t_eval = t_launch + tof
+
+            for j in range(B):
+                h = headings[j]
+                blue_future = blue_initial_pos + h * blue_speed * t_eval
+                d = np.linalg.norm(p - blue_future)
+                A[i, j] = d
+
         return A
 
     def _fictitious_play_minimax(self, A: np.ndarray) -> np.ndarray:
-        """Approximate the minimax (Nash) strategy for the row player via fictitious play.
-
-        We consider a zero-sum game where:
-            - Row player (red) wants to MINIMIZE A;
-            - Column player (blue) wants to MAXIMIZE A.
-
-        Returns:
-            red_mixed: np.ndarray of shape (K,) approximating red's equilibrium
-                       mixed strategy over rows.
-        """
         K, B = A.shape
         iters = max(1, self.region.fictitious_iters)
 
-        # Counts of how many times each pure strategy has been played.
         row_counts = np.zeros(K, dtype=float)
         col_counts = np.zeros(B, dtype=float)
 
-        # Initialize with uniform play.
         row_counts[self.rng.integers(0, K)] += 1.0
         col_counts[self.rng.integers(0, B)] += 1.0
 
-        for t in range(1, iters + 1):
-            # Average opponent strategies.
+        for _ in range(iters):
             row_mixed = row_counts / row_counts.sum()
             col_mixed = col_counts / col_counts.sum()
 
-            # Row player best response to current column mixed strategy: minimize expected A.
-            row_payoffs = A @ col_mixed  # (K,)
+            row_payoffs = A @ col_mixed
             best_row = int(np.argmin(row_payoffs))
             row_counts[best_row] += 1.0
 
-            # Column player best response to current row mixed strategy: maximize expected A.
-            col_payoffs = row_mixed @ A  # (B,)
+            col_payoffs = row_mixed @ A
             best_col = int(np.argmax(col_payoffs))
             col_counts[best_col] += 1.0
 
         red_mixed = row_counts / row_counts.sum()
         return red_mixed
+
+    def _sample_row_from_mixed(self, probs: np.ndarray) -> int:
+        p = np.maximum(probs, 0.0)
+        s = p.sum()
+        if s <= 0.0:
+            p = np.ones_like(p) / len(p)
+        else:
+            p = p / s
+
+        nonzero = int((p > 1e-12).sum())
+        replace = nonzero < 1
+        idx = self.rng.choice(len(p), size=1, replace=replace, p=p)[0]
+        return int(idx)
