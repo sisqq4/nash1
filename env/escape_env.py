@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import Dict, Tuple, Any, List
 import math
-
 import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
@@ -82,7 +81,7 @@ class EscapeEnv:
             dtype=float,
         )
 
-        # Random initial velocity direction with max speed
+        # Random initial velocity direction
         v_dir = self.rng.normal(size=3)
         v_norm = np.linalg.norm(v_dir)
         if v_norm < 1e-6:
@@ -97,15 +96,12 @@ class EscapeEnv:
             blue_speed=self.cfg.blue_max_speed,
             missile_speed=self.cfg.missile_speed,
         )
-
         self.missile_pos = launch_pos.reshape(self.cfg.num_missiles, 3)
         self.missile_launch_times = launch_times.astype(float)
         self.missile_launched[:] = False
 
         # Velocities start at zero (not yet launched)
         self.missile_vel.fill(0.0)
-
-        # Navigation gains
         self.nav_gains.fill(self.cfg.nav_gain)
 
         # Lifetime
@@ -147,8 +143,8 @@ class EscapeEnv:
         self.time += dt
 
         for i in range(self.cfg.num_missiles):
-            if (not self.missile_launched[i]) and self.time >= self.missile_launch_times[i]:
-                # Launch missile i now: set initial velocity toward current blue position
+            if (not self.missile_launched[i]) and self.time >= self.missile_launch_times[i] and self.missile_alive[i]:
+                # Launch missile i: set initial velocity toward current blue position
                 direction = self.blue_pos - self.missile_pos[i]
                 n = np.linalg.norm(direction)
                 if n < 1e-6:
@@ -157,7 +153,6 @@ class EscapeEnv:
                 direction /= n
                 self.missile_vel[i] = direction * self.cfg.missile_speed
                 self.missile_launched[i] = True
-                # Lifetime starts counting from launch
                 self.missile_time_alive[i] = 0.0
 
         # 3) Differential-game update of nav_gains for launched & alive missiles
@@ -174,7 +169,6 @@ class EscapeEnv:
                     dt,
                 )
                 self.nav_gains[idx] = new_nav
-                # Non-alive missiles keep nav_gain = 0
                 self.nav_gains[~self.missile_alive] = 0.0
 
         # 4) PN update for launched missiles
@@ -201,7 +195,7 @@ class EscapeEnv:
         if self.log_enabled:
             self._log_current_state()
 
-        # 6) Hit detection (only for launched missiles) using line-segment / sphere
+        # 6) Hit detection (line-segment / sphere)
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
 
         timeout = self.step_count >= self.cfg.max_steps
@@ -256,7 +250,6 @@ class EscapeEnv:
         if a < 1e-12:
             dist0 = float(np.linalg.norm(r0))
             return dist0 <= radius, dist0
-
         t = -float(np.dot(r0, d)) / a
         t_clamped = max(0.0, min(1.0, t))
         closest = r0 + t_clamped * d
@@ -275,10 +268,8 @@ class EscapeEnv:
         for i in range(self.cfg.num_missiles):
             if not self.missile_launched[i]:
                 continue
-
             r0 = prev_missile_pos[i] - prev_blue_pos
             r1 = self.missile_pos[i] - self.blue_pos
-
             hit, dist = self._segment_sphere_hit(r0, r1, self.cfg.hit_radius)
             if dist < min_dist:
                 min_dist = dist
@@ -287,7 +278,6 @@ class EscapeEnv:
                 break
 
         if not np.isfinite(min_dist):
-            # Fallback: current closest distance
             dists = np.linalg.norm(
                 self.missile_pos[self.missile_launched] - self.blue_pos[None, :],
                 axis=1,
@@ -310,10 +300,14 @@ class EscapeEnv:
 
         self._missile_tracks = []
         self._missile_names = []
-        for _ in range(self.cfg.num_missiles):
+        for i in range(self.cfg.num_missiles):
             self.missile_global_id += 1
             mid = self.missile_global_id
-            name = f"missile_red.{mid}.0"
+            # Encode launch step index (integer) into filename so ACMI can
+            # start each missile at its launch time.
+            launch_step = int(round(self.missile_launch_times[i] / self.cfg.dt))
+            start_token = str(max(0, launch_step))
+            name = f"missile_red.{mid}.{start_token}"
             self._missile_names.append(name)
             self._missile_tracks.append([])
 
@@ -331,6 +325,7 @@ class EscapeEnv:
         if self._plane_track is None or self._missile_tracks is None:
             return
 
+        # Plane is always visible from t=0
         roll, pitch, yaw = self._compute_orientation(self.blue_vel)
         self._plane_track.append(
             [
@@ -343,7 +338,11 @@ class EscapeEnv:
             ]
         )
 
+        # Missiles are only logged *after* they have been launched,
+        # so they are invisible in Tacview before launch.
         for i in range(self.cfg.num_missiles):
+            if not self.missile_launched[i]:
+                continue
             m_pos = self.missile_pos[i]
             m_vel = self.missile_vel[i]
             roll_m, pitch_m, yaw_m = self._compute_orientation(m_vel)

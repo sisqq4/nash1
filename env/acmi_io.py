@@ -11,6 +11,7 @@ from typing import List, Dict
 import numpy as np
 
 
+
 def write_csv(
     save_dir: str,
     fname: str,
@@ -25,6 +26,7 @@ def write_csv(
         data: list of [x, y, z, roll, pitch, yaw]
         episode_index: if set, files go to save_dir/csv/{episode_index}/
     """
+
     csv_root = os.path.join(save_dir, "csv")
     if episode_index is not None:
         csv_dir = os.path.join(csv_root, str(episode_index))
@@ -39,7 +41,6 @@ def write_csv(
         writer = csv.writer(f)
         writer.writerows(rows)
 
-
 def _read_csv_no_header(path: str) -> List[List[float]]:
     rows: List[List[float]] = []
     with open(path, "r", newline="") as f:
@@ -51,12 +52,10 @@ def _read_csv_no_header(path: str) -> List[List[float]]:
             rows.append([float(v) for v in r])
     return rows
 
-
 def _insert_in_dict(d: Dict[str, List[str]], key: str, line: str) -> None:
     if key not in d:
         d[key] = []
     d[key].append(line)
-
 
 def write_acmi(
     target_name: str,
@@ -72,6 +71,7 @@ def write_acmi(
         time_unit: time interval between samples (seconds)
         explode_time: explosion duration in units of time_unit
     """
+
     base_dir = os.path.dirname(os.path.dirname(source_dir))
     acmi_dir = os.path.join(base_dir, "acmi")
     os.makedirs(acmi_dir, exist_ok=True)
@@ -94,13 +94,22 @@ def write_acmi(
         base = os.path.basename(file_path)
         stem, _ = os.path.splitext(base)
 
-        # Expected pattern: plane_blue.1.0 / missile_red.2.0
         parts = stem.split(".")
         if len(parts) != 3:
             continue
 
         type_side = parts[0]
-        start_time = float(parts[2])
+        # parts[1] is an index we do not use directly here
+        start_token = parts[2]
+
+        # If start_token is an integer index, interpret it as step index and multiply by time_unit.
+        if start_token.isdigit():
+            start_time = int(start_token) * time_unit
+        else:
+            try:
+                start_time = float(start_token)
+            except ValueError:
+                start_time = 0.0
 
         ts_parts = type_side.split("_")
         if len(ts_parts) != 2:
@@ -120,11 +129,15 @@ def write_acmi(
             obj_no = "b" + str(missile_counts)
 
         apdata = _read_csv_no_header(file_path)
+        # If there is no data (e.g., missile never launched), skip this object entirely.
+        if not apdata:
+            continue
 
         # Coordinate and heading conversion
         for i in range(len(apdata)):
             apdata[i][0] /= 111.3195   # km -> deg (approx)
             apdata[i][1] /= 111.3195
+            apdata[i][2] *= 1000
             apdata[i][5] += 90.0       # yaw offset
 
         for i, line in enumerate(apdata):

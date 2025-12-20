@@ -2,8 +2,9 @@
 """Game-theoretic launcher for red missiles (position + launch time)."""
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, List
 import numpy as np
+
 
 
 @dataclass
@@ -17,13 +18,12 @@ class LaunchRegion:
     min_launch_interval: float = 1.0    # [s]
 
 
+
 class GameTheoreticLauncher:
     def __init__(self, region: LaunchRegion, rng: np.random.Generator | None = None) -> None:
         self.region = region
         self.rng = rng or np.random.default_rng()
 
-    # ------------------------------------------------------------------
-    # Public interface
     # ------------------------------------------------------------------
     def compute_launch_plan(
         self,
@@ -31,25 +31,25 @@ class GameTheoreticLauncher:
         blue_speed: float,
         missile_speed: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Return optimal (approximate) launch positions and times.
+        """Return heuristic launch positions and times for all missiles.
 
         Returns:
             launch_pos: (M, 3)
             launch_times: (M,) in seconds, strictly increasing with
-                at least min_launch_interval separation.
+                at least min_launch_interval separation (if possible).
         """
+
         M = self.region.num_missiles
         launch_pos = np.zeros((M, 3), dtype=float)
         launch_times = np.zeros(M, dtype=float)
 
-        chosen_times: list[float] = []
+        chosen_times: List[float] = []
 
         time_grid = np.arange(0.0, self.region.max_launch_time + 1e-6, 1.0)
 
         for m in range(M):
             allowed_times = self._filter_times(time_grid, chosen_times)
             if len(allowed_times) == 0:
-                # Fallback: if constraints are too tight, ignore interval constraint
                 allowed_times = list(time_grid)
 
             K = self.region.candidate_launch_count
@@ -64,21 +64,18 @@ class GameTheoreticLauncher:
                 missile_speed,
             )
             red_mixed = self._fictitious_play_minimax(A)
-
             idx = self._sample_row_from_mixed(red_mixed)
             launch_pos[m] = cand_pos[idx]
             t_sel = float(cand_times[idx])
             launch_times[m] = t_sel
             chosen_times.append(t_sel)
 
-        # Ensure non-decreasing launch times
+        # Ensure non-decreasing times
         order = np.argsort(launch_times)
         launch_times = launch_times[order]
         launch_pos = launch_pos[order]
         return launch_pos, launch_times
 
-    # ------------------------------------------------------------------
-    # Helpers
     # ------------------------------------------------------------------
     def _sample_positions(self, K: int) -> np.ndarray:
         x = self.rng.uniform(0.0, 20.0, size=(K,))
@@ -86,15 +83,14 @@ class GameTheoreticLauncher:
         z = self.rng.uniform(-10.0, 10.0, size=(K,))
         return np.stack([x, y, z], axis=1)
 
-    def _sample_times(self, K: int, allowed_times: list[float]) -> np.ndarray:
+    def _sample_times(self, K: int, allowed_times: List[float]) -> np.ndarray:
         idx = self.rng.integers(0, len(allowed_times), size=K)
-        arr = np.array([allowed_times[i] for i in idx], dtype=float)
-        return arr
+        return np.array([allowed_times[i] for i in idx], dtype=float)
 
-    def _filter_times(self, time_grid: np.ndarray, chosen_times: list[float]) -> list[float]:
+    def _filter_times(self, time_grid: np.ndarray, chosen_times: List[float]) -> List[float]:
         if not chosen_times:
             return list(time_grid)
-        out: list[float] = []
+        out: List[float] = []
         for t in time_grid:
             ok = True
             for t_prev in chosen_times:
@@ -130,11 +126,10 @@ class GameTheoreticLauncher:
             if n < 1e-6:
                 continue
             dirs.append(d / n)
-
         if not dirs:
             dirs = [np.array([1.0, 0.0, 0.0])]
-
         dirs = np.stack(dirs, axis=0)
+
         D = dirs.shape[0]
         B = self.region.num_blue_strategies
         if B <= D:
@@ -155,6 +150,7 @@ class GameTheoreticLauncher:
         Payoff is approximate distance between missile launch point and
         blue predicted position at an estimated intercept time.
         """
+
         K = cand_pos.shape[0]
         headings = self._sample_blue_headings(blue_initial_pos)
         B = headings.shape[0]
@@ -172,7 +168,6 @@ class GameTheoreticLauncher:
                 tof = 0.0
             else:
                 tof = d0 / missile_speed
-
             t_eval = t_launch + tof
 
             for j in range(B):
@@ -180,7 +175,6 @@ class GameTheoreticLauncher:
                 blue_future = blue_initial_pos + h * blue_speed * t_eval
                 d = np.linalg.norm(p - blue_future)
                 A[i, j] = d
-
         return A
 
     def _fictitious_play_minimax(self, A: np.ndarray) -> np.ndarray:
