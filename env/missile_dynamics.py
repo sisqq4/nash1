@@ -143,7 +143,7 @@ def update_missiles_pn(
         # This approximates the normal acceleration direction.
         los_perp = los - np.dot(los, u) * u
         perp_norm = np.linalg.norm(los_perp)
-        if perp_norm > 1e-6:
+        if perp_norm > 1e-6 and N_gain != 0.0:
             los_perp /= perp_norm
             # Heading update (discrete-time analogue of lateral acceleration),
             # scaled by navigation gain.

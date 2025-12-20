@@ -62,7 +62,6 @@ def train():
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
 
-    # Ensure save_dir exists
     if env_cfg.log_trajectories:
         os.makedirs(env_cfg.save_dir, exist_ok=True)
 
@@ -93,19 +92,25 @@ def train():
         if ep % train_cfg.print_interval == 0:
             avg_reward = sum(episode_rewards[-train_cfg.print_interval:]) / train_cfg.print_interval
             elapsed = time.time() - start_time
-            source_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
-            if os.path.isdir(source_dir):
-                target_name = f"session_ep{ep:04d}"
-                write_acmi(
-                    target_name=target_name,
-                    source_dir=source_dir,
-                    time_unit=env_cfg.dt,
-                    explode_time=10,
-                )
             print(
                 f"Episode {ep:4d} | avg_reward (last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
                 f"steps = {global_step:6d} | elapsed = {elapsed:6.1f}s"
             )
+
+        # Every 10 episodes, convert that episode's CSV into a Tacview ACMI
+        if env_cfg.log_trajectories and ep % 10 == 0:
+            csv_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
+            if os.path.isdir(csv_dir):
+                target_name = f"session_ep{ep:04d}"
+                write_acmi(
+                    target_name=target_name,
+                    source_dir=csv_dir,
+                    time_unit=env_cfg.dt,
+                    explode_time=10,
+                )
+                print(f"[ACMI] Episode {ep}: wrote {target_name}.acmi from {csv_dir}")
+            else:
+                print(f"[ACMI] Episode {ep}: csv dir {csv_dir} not found, skip.")
 
     print("Training finished.")
 

@@ -18,8 +18,8 @@ class EnvConfig:
     blue_init_z: float = 5.0
 
     # Simulation parameters
-    dt: float = 1.0          # [s] time step
-    max_steps: int = 200     # max steps per episode
+    dt: float = 0.1          # [s] time step & hit-judgement window
+    max_steps: int = 1200    # ~120 s episode length
 
     # Blue aircraft dynamics
     # 2000 km/h -> km/s
@@ -33,8 +33,11 @@ class EnvConfig:
     num_missiles: int = 3
     nav_gain: float = 3.0  # base navigation gain for PN-like heading update
 
-    # Interaction distances
-    hit_radius: float = 0.015  # km (~15 m lethal radius)
+    # Missile lifetime / energy limit
+    missile_max_flight_time: float = 120.0   # [s], ~160 km at 4900 km/h
+
+    # Hit radius (warhead lethal radius)
+    hit_radius: float = 0.015                # km (~15 m)
 
     # Game-theoretic launcher parameters (Nash for initial launch positions)
     candidate_launch_count: int = 40  # how many candidate launch points are evaluated each reset
@@ -59,7 +62,7 @@ class EnvConfig:
 @dataclass
 class TrainConfig:
     """Training hyperparameters for the blue RL agent."""
-    episodes: int = 500
+    episodes: int = 200
     gamma: float = 0.99
     lr: float = 1e-3
     batch_size: int = 64

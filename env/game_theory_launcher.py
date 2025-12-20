@@ -79,14 +79,8 @@ class GameTheoreticLauncher:
         nonzero = int((probs > 1e-12).sum())
         replace = self.region.num_missiles > nonzero
 
-        idx = self.rng.choice(
-            K,
-            size=self.region.num_missiles,
-            replace=replace,
-            p=probs,
-        )
-        selected = candidates[idx]
-        return selected
+        idx = self.rng.choice(K, size=self.region.num_missiles, replace=replace, p=probs)
+        return candidates[idx]
 
     # ------------------------------------------------------------------
     # Internals
@@ -147,16 +141,14 @@ class GameTheoreticLauncher:
         if not dirs:
             dirs = [np.array([1.0, 0.0, 0.0])]
 
-        B = self.region.num_blue_strategies
-        dirs = np.stack(dirs, axis=0)  # (D, 3)
+        dirs = np.stack(dirs, axis=0)
         D = dirs.shape[0]
+        B = self.region.num_blue_strategies
 
         if B <= D:
             return dirs[:B]
-        else:
-            # If more headings requested, sample with replacement.
-            idx = self.rng.integers(0, D, size=B)
-            return dirs[idx]
+        idx = self.rng.integers(0, D, size=B)
+        return dirs[idx]
 
     def _build_payoff_matrix(self, candidates: np.ndarray, blue_initial_pos: np.ndarray) -> np.ndarray:
         """Construct payoff matrix A for the zero-sum game.

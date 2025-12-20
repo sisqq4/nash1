@@ -52,6 +52,10 @@ class EscapeEnv:
         # Navigation gains for each missile (jointly updated by diff-game controller).
         self.nav_gains = np.full(cfg.num_missiles, cfg.nav_gain, dtype=float)
 
+        # Missile lifetime / energy tracking
+        self.missile_alive = np.ones(cfg.num_missiles, dtype=bool)
+        self.missile_time_alive = np.zeros(cfg.num_missiles, dtype=float)
+
         self.t = 0
         self.done = False
 
@@ -81,13 +85,12 @@ class EscapeEnv:
         self.t = 0
         self.done = False
 
-        # --- Blue initial state: fixed position [70, 0, 0] km,
+        # --- Blue initial state: fixed position [70, 0, 5] km,
         #     random velocity direction with fixed speed norm. ---
         self.blue_pos = np.array(
             [self.cfg.blue_init_x, self.cfg.blue_init_y, self.cfg.blue_init_z],
             dtype=float,
         )
-        # Random unit direction
         v_dir = self.rng.normal(size=3)
         v_norm = np.linalg.norm(v_dir)
         if v_norm < 1e-6:
@@ -96,12 +99,11 @@ class EscapeEnv:
         v_dir /= v_norm
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
-        # --- Red missiles: Nash game to select launch positions inside
-        #     x:[0,20], y:[-10,10], z:[-10,10] km. ---
+        # Red missiles: Nash launcher for positions
         launch_positions = self.launcher.compute_launch_positions(self.blue_pos)
         self.missile_pos = launch_positions.reshape(self.cfg.num_missiles, 3)
 
-        # Initialize missile velocities to point towards the blue aircraft.
+        # Initial missile velocities towards blue aircraft
         self.missile_vel = np.zeros_like(self.missile_pos)
         for i in range(self.cfg.num_missiles):
             direction = self.blue_pos - self.missile_pos[i]
@@ -112,38 +114,31 @@ class EscapeEnv:
             direction /= norm
             self.missile_vel[i] = direction * self.cfg.missile_speed
 
-        # Reset nav gains to base value.
         self.nav_gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
 
-        # Initialize logging for this episode.
+        # Reset missile lifetime
+        self.missile_alive[:] = True
+        self.missile_time_alive[:] = 0.0
+
         if self.log_enabled:
             self._init_logging()
-
-            # Log initial state at t=0
             self._log_current_state()
 
         return self._get_obs()
 
+    # ------------------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
-        """Advance environment by one step.
-
-        Args:
-            action: integer in [0, action_dim-1]
-
-        Returns:
-            obs: next observation
-            reward: scalar reward
-            done: episode termination flag
-            info: extra diagnostics
-        """
         if self.done:
             raise RuntimeError("Call reset() before stepping a finished episode.")
 
-        # Clip invalid actions
         if not (0 <= int(action) < self.action_dim):
             raise ValueError(f"Invalid action {action}, expected in [0, {self.action_dim - 1}].")
 
-        # 1) Update blue state based on RL action.
+        # Save previous positions for line-sphere hit checking
+        prev_blue_pos = self.blue_pos.copy()
+        prev_missile_pos = self.missile_pos.copy()
+
+        # 1) Update blue state
         self.blue_pos, self.blue_vel = update_blue_state(
             self.blue_pos,
             self.blue_vel,
@@ -153,19 +148,23 @@ class EscapeEnv:
             v_max=self.cfg.blue_max_speed,
         )
 
-        # 2) Jointly update nav_gains via differential-game controller (if enabled).
+        # 2) Update navigation gains via differential-game controller (only for alive missiles)
         if self.diff_ctrl is not None:
-            self.nav_gains = self.diff_ctrl.update_nav_gains(
+            nav_input = self.nav_gains.copy()
+            nav_input[~self.missile_alive] = 0.0
+            new_nav = self.diff_ctrl.update_nav_gains(
                 self.blue_pos,
                 self.blue_vel,
                 self.missile_pos,
                 self.missile_vel,
-                self.nav_gains,
+                nav_input,
                 self.cfg.dt,
             )
+            # Apply only to alive missiles; dead missiles keep nav_gain = 0
+            self.nav_gains[self.missile_alive] = new_nav[self.missile_alive]
+            self.nav_gains[~self.missile_alive] = 0.0
 
-        # 3) Update missile positions and velocities using PN-like guidance
-        #    with (possibly) missile-dependent navigation gains.
+        # 3) PN guidance update for missiles (nav_gain = 0 for dead missiles => ballistic)
         self.missile_pos, self.missile_vel = update_missiles_pn(
             self.missile_pos,
             self.missile_vel,
@@ -178,15 +177,20 @@ class EscapeEnv:
 
         self.t += 1
 
-        # Log state after this step
+        # 3b) Update missile lifetime / energy
+        dt = self.cfg.dt
+        self.missile_time_alive[self.missile_alive] += dt
+        # When flight time exceeds limit, missile can no longer navigate (nav_gain = 0)
+        expired = self.missile_time_alive >= self.cfg.missile_max_flight_time
+        self.missile_alive[expired] = False
+        self.nav_gains[expired] = 0.0
+
         if self.log_enabled:
             self._log_current_state()
 
-        # 4) Compute distances and termination.
-        dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
-        min_dist = float(np.min(dists))
+        # 4) Hit detection using segment-sphere intersection in relative coordinates
+        hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
 
-        hit = min_dist <= self.cfg.hit_radius
         timeout = self.t >= self.cfg.max_steps
 
         reward = 0.0
@@ -197,30 +201,27 @@ class EscapeEnv:
             reward = 1.0
             self.done = True
         else:
-            # Small shaping: encourage staying away from missiles.
-            # Normalize by characteristic distance (region_span).
+            # shaping: encourage larger min distance
             reward = 0.01 * (min_dist / self.cfg.region_span)
 
-        # If episode just finished, flush logs to CSV.
         if self.done and self.log_enabled:
             self._flush_logs_to_csv()
 
         obs = self._get_obs()
         info: Dict[str, Any] = {
             "t": self.t,
-            "min_dist": min_dist,
-            "hit": hit,
-            "timeout": timeout,
+            "min_dist": float(min_dist),
+            "hit": bool(hit),
+            "timeout": bool(timeout),
             "nav_gains": self.nav_gains.copy(),
+            "missile_alive": self.missile_alive.copy(),
+            "missile_time_alive": self.missile_time_alive.copy(),
         }
         return obs, float(reward), bool(self.done), info
 
     # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
     def _get_obs(self) -> np.ndarray:
-        """Observation is blue state + relative missile positions."""
-        rel_missiles = self.missile_pos - self.blue_pos[None, :]  # (M,3)
+        rel_missiles = self.missile_pos - self.blue_pos[None, :]
         obs = np.concatenate(
             [self.blue_pos, self.blue_vel, rel_missiles.reshape(-1)],
             axis=0,
@@ -228,39 +229,80 @@ class EscapeEnv:
         return obs.astype(np.float32)
 
     # ------------------------------------------------------------------
+    # Hit detection helpers
+    # ------------------------------------------------------------------
+    def _segment_sphere_hit(
+        self,
+        r0: np.ndarray,
+        r1: np.ndarray,
+        radius: float,
+    ) -> Tuple[bool, float]:
+        """Check if segment [r0, r1] hits a sphere of radius around origin.
+
+        r0, r1: relative position vectors missile - blue at previous / current step.
+        Returns (hit, min_distance) where min_distance is the minimal distance
+        from the segment to the origin.
+        """
+        d = r1 - r0
+        a = float(np.dot(d, d))
+        if a < 1e-12:
+            dist0 = float(np.linalg.norm(r0))
+            return dist0 <= radius, dist0
+
+        t = -float(np.dot(r0, d)) / a
+        t_clamped = max(0.0, min(1.0, t))
+        closest = r0 + t_clamped * d
+        dist = float(np.linalg.norm(closest))
+        hit = dist <= radius
+        return hit, dist
+
+    def _check_hits(
+        self,
+        prev_blue_pos: np.ndarray,
+        prev_missile_pos: np.ndarray,
+    ) -> Tuple[bool, float]:
+        hit_any = False
+        min_dist = float("inf")
+
+        for i in range(self.cfg.num_missiles):
+            r0 = prev_missile_pos[i] - prev_blue_pos
+            r1 = self.missile_pos[i] - self.blue_pos
+
+            hit, dist = self._segment_sphere_hit(r0, r1, self.cfg.hit_radius)
+            if dist < min_dist:
+                min_dist = dist
+            if hit:
+                hit_any = True
+                break
+
+        if not np.isfinite(min_dist):
+            dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
+            min_dist = float(np.min(dists))
+        return hit_any, min_dist
+
+    # ------------------------------------------------------------------
     # Logging helpers
     # ------------------------------------------------------------------
     def _init_logging(self) -> None:
-        """Prepare trajectory containers and assign object IDs for this episode."""
         self.episode_index += 1
 
-        # Plane: single blue aircraft
         self.plane_global_id += 1
         plane_id = self.plane_global_id
-        self._plane_name = f"plane_blue.{plane_id}.0"  # start_time=0
+        self._plane_name = f"plane_blue.{plane_id}.0"
 
-        # Missiles: three red missiles
         self._missile_tracks = []
         self._missile_names = []
         for _ in range(self.cfg.num_missiles):
             self.missile_global_id += 1
             mid = self.missile_global_id
-            name = f"missile_red.{mid}.0"  # start_time=0
+            name = f"missile_red.{mid}.0"
             self._missile_names.append(name)
             self._missile_tracks.append([])
 
         self._plane_track = []
 
     def _compute_orientation(self, vel: np.ndarray) -> Tuple[float, float, float]:
-        """Compute (roll, pitch, yaw) in degrees from velocity vector.
-
-        This is a simple kinematic approximation:
-            yaw   = atan2(v_y, v_x)
-            pitch = atan2(v_z, sqrt(v_x^2 + v_y^2))
-            roll  = 0 (not modeled)
-        """
         vx, vy, vz = vel
-        # avoid division by zero
         horiz = math.sqrt(vx * vx + vy * vy)
         yaw = math.degrees(math.atan2(vy, vx))
         pitch = math.degrees(math.atan2(vz, horiz))
@@ -271,7 +313,6 @@ class EscapeEnv:
         if self._plane_track is None or self._missile_tracks is None:
             return
 
-        # Plane
         roll, pitch, yaw = self._compute_orientation(self.blue_vel)
         self._plane_track.append([
             float(self.blue_pos[0]),
@@ -282,7 +323,6 @@ class EscapeEnv:
             yaw,
         ])
 
-        # Missiles
         for i in range(self.cfg.num_missiles):
             m_pos = self.missile_pos[i]
             m_vel = self.missile_vel[i]
@@ -302,19 +342,15 @@ class EscapeEnv:
         if self._plane_name is None or self._missile_names is None:
             return
 
-        # 这里的 episode_index 从 1 开始，每次 reset() 自增
         ep_idx = self.episode_index
 
-        # Write plane track
         if self._plane_track:
-            write_csv(self.cfg.save_dir, self._plane_name, self._plane_track, episode_index=ep_idx,)
+            write_csv(self.cfg.save_dir, self._plane_name, self._plane_track, episode_index=ep_idx)
 
-        # Write missiles
         for track, name in zip(self._missile_tracks, self._missile_names):
             if track:
                 write_csv(self.cfg.save_dir, name, track, episode_index=ep_idx)
 
-        # Clear references
         self._plane_track = None
         self._missile_tracks = None
         self._plane_name = None
