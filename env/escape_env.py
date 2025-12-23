@@ -14,6 +14,7 @@ from .acmi_io import write_csv
 from config import EnvConfig
 
 
+
 class EscapeEnv:
     def __init__(self, cfg: EnvConfig, seed: int | None = None) -> None:
         self.cfg = cfg
@@ -39,7 +40,7 @@ class EscapeEnv:
         self.missile_vel = np.zeros((M, 3), dtype=float)
         self.nav_gains = np.full(M, cfg.nav_gain, dtype=float)
 
-        # Launch and lifetime
+        # Launch & lifetime
         self.missile_launch_times = np.zeros(M, dtype=float)
         self.missile_launched = np.zeros(M, dtype=bool)
         self.missile_alive = np.ones(M, dtype=bool)
@@ -71,7 +72,7 @@ class EscapeEnv:
         self.time = 0.0
         self.done = False
 
-        # Blue initial position: random in box
+        # Blue initial position: random in box (above ground)
         self.blue_pos = np.array(
             [
                 self.rng.uniform(self.cfg.blue_x_min, self.cfg.blue_x_max),
@@ -138,12 +139,22 @@ class EscapeEnv:
             v_max=self.cfg.blue_max_speed,
         )
 
+        # Enforce ground (terrain) for blue
+        crashed = False
+        if self.blue_pos[2] <= 0.0:
+            self.blue_pos[2] = 0.0
+            crashed = True
+
         # 2) Update time and possibly launch new missiles
         self.step_count += 1
         self.time += dt
 
         for i in range(self.cfg.num_missiles):
-            if (not self.missile_launched[i]) and self.time >= self.missile_launch_times[i] and self.missile_alive[i]:
+            if (
+                (not self.missile_launched[i])
+                and self.missile_alive[i]
+                and self.time >= self.missile_launch_times[i]
+            ):
                 # Launch missile i: set initial velocity toward current blue position
                 direction = self.blue_pos - self.missile_pos[i]
                 n = np.linalg.norm(direction)
@@ -192,15 +203,27 @@ class EscapeEnv:
         self.missile_alive[expired] = False
         self.nav_gains[expired] = 0.0
 
+        # 6) Enforce ground for missiles: z <= 0 destroys the missile
+        for i in range(self.cfg.num_missiles):
+            if self.missile_launched[i] and self.missile_alive[i] and self.missile_pos[i, 2] <= 0.0:
+                self.missile_pos[i, 2] = 0.0
+                self.missile_alive[i] = False
+                self.nav_gains[i] = 0.0
+                self.missile_vel[i] = 0.0
+
         if self.log_enabled:
             self._log_current_state()
 
-        # 6) Hit detection (line-segment / sphere)
+        # 7) Hit detection (line-segment / sphere)
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
 
         timeout = self.step_count >= self.cfg.max_steps
 
-        if hit:
+        # 8) Terminal conditions and reward
+        if crashed:
+            reward = self.cfg.ground_crash_penalty
+            self.done = True
+        elif hit:
             reward = -1.0
             self.done = True
         elif timeout:
@@ -219,6 +242,7 @@ class EscapeEnv:
             "min_dist": float(min_dist),
             "hit": bool(hit),
             "timeout": bool(timeout),
+            "crashed": bool(crashed),
             "nav_gains": self.nav_gains.copy(),
             "missile_alive": self.missile_alive.copy(),
             "missile_launched": self.missile_launched.copy(),

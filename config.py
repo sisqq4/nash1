@@ -24,7 +24,7 @@ class EnvConfig:
     blue_z_max: float = 10.0
 
     # Simulation
-    dt: float = 0.1          # [s] physics and hit-judgement step
+    dt: float = 0.1          # [s] physics & hit-judgement step
     max_steps: int = 1200    # episode length in steps (~120 s)
 
     # Blue aircraft dynamics
@@ -46,7 +46,7 @@ class EnvConfig:
     candidate_launch_count: int = 32
     num_blue_strategies: int = 8
     fictitious_iters: int = 200
-    blue_escape_distance: float = 10.0      # km (only used for rough payoff shaping)
+    blue_escape_distance: float = 10.0      # km (only for rough payoff shaping)
     max_launch_time: float = 8.0            # latest first-launch time [s]
     min_launch_interval: float = 1.0        # between launches [s]
 
@@ -58,6 +58,9 @@ class EnvConfig:
     diff_gain_max: float = 8.0
     diff_w_dist: float = 1.0
     diff_w_gain: float = 0.01
+
+    # Ground / terrain
+    ground_crash_penalty: float = -5.0  # penalty when blue hits the ground
 
     # Logging / Tacview export
     save_dir: str = "outputs"
