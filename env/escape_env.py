@@ -32,16 +32,6 @@ class EscapeEnv:
         )
         self.launcher = GameTheoreticLauncher(region, rng=self.rng)
         self.diff_ctrl = DifferentialGameController(cfg) if cfg.use_diff_game else None
-        # Dynamic models for blue aircraft and red missiles
-        self.blue_model = Aircraft(
-            dt=cfg.dt,
-            accel_mag=cfg.blue_accel,
-            v_max=cfg.blue_max_speed,
-        )
-        self.missile_model = Missiles(
-            dt=cfg.dt,
-            speed=cfg.missile_speed,
-        )
 
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
@@ -76,6 +66,20 @@ class EscapeEnv:
         self._plane_name: str | None = None
         self._missile_tracks: List[List[List[float]]] | None = None
         self._missile_names: List[str] | None = None
+
+        # 封装后的动力学模型（便于之后扩展类内逻辑）
+        self.aircraft_model = Aircraft(
+            dt=cfg.dt,
+            g=9.6,
+            MaxV=cfg.blue_max_speed,
+            MinV=170.0,
+            accel_mag=cfg.blue_accel,
+            v_max=cfg.blue_max_speed,
+        )
+        self.missile_model = Missiles(
+            dt=cfg.dt,
+            missile_speed=cfg.missile_speed,
+        )
 
     # ------------------------------------------------------------------
     def reset(self) -> np.ndarray:
@@ -140,8 +144,8 @@ class EscapeEnv:
         prev_blue_pos = self.blue_pos.copy()
         prev_missile_pos = self.missile_pos.copy()
 
-        # 1) Update blue aircraft
-        self.blue_pos, self.blue_vel = self.blue_model.step(
+        # 1) Update blue aircraft（通过 Aircraft 类封装）
+        self.blue_pos, self.blue_vel = self.aircraft_model.step(
             self.blue_pos,
             self.blue_vel,
             action,
@@ -190,18 +194,17 @@ class EscapeEnv:
                 self.nav_gains[idx] = new_nav
                 self.nav_gains[~self.missile_alive] = 0.0
 
-        # 4) PN update for launched missiles
+        # 4) PN update for launched missiles（通过 Missiles 类封装）
         idx_launched = np.where(self.missile_launched)[0]
         if idx_launched.size > 0:
-            sub_pos, sub_vel = self.missile_model.step(
-                self.missile_pos[idx_launched],
-                self.missile_vel[idx_launched],
-                self.blue_pos,
-                self.blue_vel,
-                self.nav_gains[idx_launched],
-            )
-            self.missile_pos[idx_launched] = sub_pos
-            self.missile_vel[idx_launched] = sub_vel
+            self.missile_pos[idx_launched], self.missile_vel[idx_launched] = \
+                self.missile_model.step(
+                    self.missile_pos[idx_launched],
+                    self.missile_vel[idx_launched],
+                    self.blue_pos,
+                    self.blue_vel,
+                    self.nav_gains[idx_launched],
+                )
 
         # 5) Update missile lifetime / energy
         self.missile_time_alive[self.missile_launched & self.missile_alive] += dt
