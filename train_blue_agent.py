@@ -16,6 +16,7 @@ from env.acmi_io import write_acmi
 from agent.dqn_agent import DQNAgent, DQNConfig
 
 
+
 def make_env_and_agent(
     env_cfg: EnvConfig,
     train_cfg: TrainConfig,
@@ -42,6 +43,7 @@ def make_env_and_agent(
     return env, agent
 
 
+
 def train() -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
@@ -53,16 +55,19 @@ def train() -> None:
 
     episode_rewards = []
     global_step = 0
+    success_count = 0
     start_time = time.time()
 
     for ep in range(1, train_cfg.episodes + 1):
         obs = env.reset()
         done = False
         ep_reward = 0.0
+        episode_info = None
 
         while not done:
             action = agent.select_action(obs, eval_mode=False)
             next_obs, reward, done, info = env.step(action)
+            episode_info = info
 
             agent.store_transition(obs, action, reward, next_obs, done)
             _ = agent.update()
@@ -72,12 +77,21 @@ def train() -> None:
             global_step += 1
 
         episode_rewards.append(ep_reward)
+        # Determine whether this episode is a successful escape (blue survives until timeout).
+        if episode_info is not None:
+            is_timeout = bool(episode_info.get("timeout", False))
+            is_hit = bool(episode_info.get("hit", False))
+            crashed = bool(episode_info.get("crashed", False))
+            if is_timeout and (not is_hit) and (not crashed):
+                success_count += 1
 
         if ep % train_cfg.print_interval == 0:
             avg_reward = sum(episode_rewards[-train_cfg.print_interval :]) / train_cfg.print_interval
             elapsed = time.time() - start_time
+            success_rate = success_count / ep if ep > 0 else 0.0
             print(
                 f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
+                f"success = {success_count}/{ep} ({success_rate * 100:5.1f}%) | "
                 f"steps = {global_step:6d} | elapsed = {elapsed:6.1f}s"
             )
 
@@ -97,6 +111,7 @@ def train() -> None:
                 print(f"[ACMI] Episode {ep}: csv dir {csv_dir} not found, skip.")
 
     print("Training finished.")
+
 
 
 if __name__ == "__main__":

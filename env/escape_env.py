@@ -9,6 +9,7 @@ import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
 from .missile_dynamics import update_blue_state, update_missiles_pn
+from .aircraft_missiles import Aircraft, Missiles
 from .diff_game_controller import DifferentialGameController
 from .acmi_io import write_csv
 from config import EnvConfig
@@ -31,6 +32,16 @@ class EscapeEnv:
         )
         self.launcher = GameTheoreticLauncher(region, rng=self.rng)
         self.diff_ctrl = DifferentialGameController(cfg) if cfg.use_diff_game else None
+        # Dynamic models for blue aircraft and red missiles
+        self.blue_model = Aircraft(
+            dt=cfg.dt,
+            accel_mag=cfg.blue_accel,
+            v_max=cfg.blue_max_speed,
+        )
+        self.missile_model = Missiles(
+            dt=cfg.dt,
+            speed=cfg.missile_speed,
+        )
 
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
@@ -130,13 +141,10 @@ class EscapeEnv:
         prev_missile_pos = self.missile_pos.copy()
 
         # 1) Update blue aircraft
-        self.blue_pos, self.blue_vel = update_blue_state(
+        self.blue_pos, self.blue_vel = self.blue_model.step(
             self.blue_pos,
             self.blue_vel,
             action,
-            dt=dt,
-            accel_mag=self.cfg.blue_accel,
-            v_max=self.cfg.blue_max_speed,
         )
 
         # Enforce ground (terrain) for blue
@@ -185,13 +193,11 @@ class EscapeEnv:
         # 4) PN update for launched missiles
         idx_launched = np.where(self.missile_launched)[0]
         if idx_launched.size > 0:
-            sub_pos, sub_vel = update_missiles_pn(
+            sub_pos, sub_vel = self.missile_model.step(
                 self.missile_pos[idx_launched],
                 self.missile_vel[idx_launched],
                 self.blue_pos,
                 self.blue_vel,
-                self.cfg.missile_speed,
-                dt,
                 self.nav_gains[idx_launched],
             )
             self.missile_pos[idx_launched] = sub_pos
