@@ -8,9 +8,9 @@ import math
 import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
-from .missile_dynamics import update_blue_state, update_missiles_pn
 from .diff_game_controller import DifferentialGameController
 from .acmi_io import write_csv
+from .aircraft_missiles import Aircraft, Missiles
 from config import EnvConfig
 
 
@@ -34,6 +34,7 @@ class EscapeEnv:
 
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
+        self.blue_crashed = False
 
         M = cfg.num_missiles
         self.missile_pos = np.zeros((M, 3), dtype=float)
@@ -45,10 +46,13 @@ class EscapeEnv:
         self.missile_launched = np.zeros(M, dtype=bool)
         self.missile_alive = np.ones(M, dtype=bool)
         self.missile_time_alive = np.zeros(M, dtype=float)
+        self.missiles: List[Missiles] = []
+        self.aircraft_model: Aircraft | None = None
 
         self.step_count = 0
         self.time = 0.0
         self.done = False
+        self.blue_crashed = False
 
         # Observation: blue pos (3) + blue vel (3) + rel missile pos (3*M)
         self.observation_dim = 3 + 3 + 3 * M
@@ -109,11 +113,100 @@ class EscapeEnv:
         self.missile_alive[:] = True
         self.missile_time_alive[:] = 0.0
 
+        # ---- 蓝机对象同步到 Aircraft 类 ----
+        speed = float(np.linalg.norm(self.blue_vel))
+        if speed <= 1e-6:
+            speed = float(self.cfg.blue_max_speed)
+
+        vx, vy, vz = self.blue_vel
+        pitch0 = 0.0
+        heading0 = 0.0
+        if speed > 1e-6:
+            # 俯仰角：按 y / |v|
+            pitch0 = math.asin(max(-1.0, min(1.0, float(vy) / speed)))
+            # 偏航角：投影到 X-Z 平面
+            heading0 = math.atan2(-float(vz), float(vx))
+
+        self.aircraft_model = Aircraft(
+            aircraft_plist=[
+                float(self.blue_pos[0]),
+                float(self.blue_pos[1]),
+                float(self.blue_pos[2]),
+            ],
+            V=speed,
+            Pitch=pitch0,
+            Heading=heading0,
+            dt=self.cfg.dt,
+            g=9.6,
+            MaxV=float(self.cfg.blue_max_speed),
+        )
+
+        # ---- 导弹对象列表：一发导弹 = 一个 Missiles 实例 ----
+        self.missiles = []
+        M = self.cfg.num_missiles
+        for i in range(M):
+            pos_i = self.missile_pos[i].astype(float)  # 已经从发射区域 / Nash 结果中填好
+            m_obj = Missiles(
+                missile_plist=pos_i.tolist(),
+                V=float(self.cfg.missile_speed),
+                Pitch=0.0,
+                Heading=0.0,
+                dt=self.cfg.dt,
+                g=9.6,
+                k1=float(self.cfg.nav_gain),
+                k2=float(self.cfg.nav_gain),
+                target_speed=float(self.cfg.missile_speed),
+            )
+            # 初始为“未发射”状态，由 missile_launched 控制是否更新
+            m_obj.attacking = False
+            m_obj.time = 0.0
+            m_obj.initial_speed = float(self.cfg.missile_speed)
+            m_obj._last_decay_time = m_obj.boost_duration
+            self.missiles.append(m_obj)
+
         if self.log_enabled:
             self._init_logging()
             self._log_current_state()
 
         return self._get_obs()
+
+    # ------------------------------------------------------------------
+    def _decode_action_to_overload(self, action: int) -> tuple[float, float, float, float]:
+        """
+        将离散动作编号映射为 (nx, ny, roll, Pitch_cmd)，供 Aircraft.AircraftPostition 调用。
+
+        返回:
+            nx         : 切向过载
+            ny         : 法向过载
+            roll       : 滚转角 [rad]
+            Pitch_cmd  : -1 保持当前俯仰角; 0 强制水平
+        """
+        a = int(action)
+
+        if a == 0:
+            # 水平直飞 / 保持
+            return 0.0, 1.0, 0.0, 0.0
+        elif a == 1:
+            # 加速直飞
+            return 1.0, 1.0, 0.0, -1.0
+        elif a == 2:
+            # 减速直飞
+            return -1.0, 1.0, 0.0, -1.0
+        elif a == 3:
+            # 左转弯（中等过载）
+            return 0.0, 3.0, math.pi / 6.0, -1.0
+        elif a == 4:
+            # 右转弯（中等过载）
+            return 0.0, 3.0, -math.pi / 6.0, -1.0
+        elif a == 5:
+            # 爬升机动
+            return 0.0, 2.0, 0.0, -1.0
+        elif a == 6:
+            # 俯冲机动
+            return 0.0, 0.5, 0.0, -1.0
+        else:
+            # 较剧烈的滚转（简单近似蛇形）
+            return 0.0, 2.5, math.pi / 3.0, -1.0
 
     # ------------------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
@@ -130,20 +223,28 @@ class EscapeEnv:
         prev_missile_pos = self.missile_pos.copy()
 
         # 1) Update blue aircraft
-        self.blue_pos, self.blue_vel = update_blue_state(
-            self.blue_pos,
-            self.blue_vel,
-            action,
-            dt=dt,
-            accel_mag=self.cfg.blue_accel,
-            v_max=self.cfg.blue_max_speed,
+        if self.aircraft_model is None:
+            raise RuntimeError("aircraft_model not initialized. Call reset() before step().")
+
+        nx, ny, roll, pitch_cmd = self._decode_action_to_overload(int(action))
+
+        new_x, new_y, new_z = self.aircraft_model.AircraftPostition(
+            missile_plist=None,
+            nx=nx,
+            ny=ny,
+            roll=roll,
+            Pitch=pitch_cmd,
         )
+        self.blue_pos = np.array([new_x, new_y, new_z], dtype=np.float32)
+        self.blue_vel = (self.blue_pos - prev_blue_pos) / dt
 
         # Enforce ground (terrain) for blue
         crashed = False
         if self.blue_pos[2] <= 0.0:
             self.blue_pos[2] = 0.0
             crashed = True
+            self.blue_crashed = True
+            self.done = True
 
         # 2) Update time and possibly launch new missiles
         self.step_count += 1
@@ -166,6 +267,30 @@ class EscapeEnv:
                 self.missile_launched[i] = True
                 self.missile_time_alive[i] = 0.0
 
+                # 同步导弹对象的初始状态，使其与当前发射条件一致
+                speed0 = float(np.linalg.norm(self.missile_vel[i]))
+                if speed0 <= 1e-6:
+                    speed0 = float(self.cfg.missile_speed)
+                vx, vy, vz = self.missile_vel[i]
+                pitch0 = 0.0
+                heading0 = 0.0
+                if speed0 > 1e-6:
+                    pitch0 = math.asin(max(-1.0, min(1.0, float(vy) / speed0)))
+                    heading0 = math.atan2(-float(vz), float(vx))
+
+                m_obj = self.missiles[i]
+                m_obj.X = float(self.missile_pos[i, 0])
+                m_obj.Y = float(self.missile_pos[i, 1])
+                m_obj.Z = float(self.missile_pos[i, 2])
+                m_obj.V = speed0
+                m_obj.Pitch = pitch0
+                m_obj.Heading = heading0
+                m_obj.initial_speed = speed0
+                m_obj.time = 0.0
+                m_obj._last_decay_time = m_obj.boost_duration
+                m_obj.target_id = 0
+                m_obj.attacking = True
+
         # 3) Differential-game update of nav_gains for launched & alive missiles
         if self.diff_ctrl is not None:
             idx = np.where(self.missile_launched & self.missile_alive)[0]
@@ -183,19 +308,30 @@ class EscapeEnv:
                 self.nav_gains[~self.missile_alive] = 0.0
 
         # 4) PN update for launched missiles
-        idx_launched = np.where(self.missile_launched)[0]
+        idx_launched = np.where(self.missile_launched & self.missile_alive)[0]
         if idx_launched.size > 0:
-            sub_pos, sub_vel = update_missiles_pn(
-                self.missile_pos[idx_launched],
-                self.missile_vel[idx_launched],
-                self.blue_pos,
-                self.blue_vel,
-                self.cfg.missile_speed,
-                dt,
-                self.nav_gains[idx_launched],
-            )
-            self.missile_pos[idx_launched] = sub_pos
-            self.missile_vel[idx_launched] = sub_vel
+            V_t = float(self.aircraft_model.V)
+            theta_t = float(self.aircraft_model.Pitch)
+            fea_t = float(self.aircraft_model.Heading)
+            aircraft_plist = [
+                float(self.aircraft_model.X),
+                float(self.aircraft_model.Y),
+                float(self.aircraft_model.Z),
+            ]
+
+            for i in idx_launched:
+                # 将差分博弈得到的 nav_gains 赋给该枚导弹的比例导引系数
+                self.missiles[i].k1 = float(self.nav_gains[i])
+                self.missiles[i].k2 = float(self.nav_gains[i])
+
+                new_pos = self.missiles[i].MissilePosition(
+                    aircraft_plist=aircraft_plist,
+                    V_t=V_t,
+                    theta_t=theta_t,
+                    fea_t=fea_t,
+                )
+                self.missile_pos[i] = np.asarray(new_pos, dtype=np.float32)
+                self.missile_vel[i] = (self.missile_pos[i] - prev_missile_pos[i]) / dt
 
         # 5) Update missile lifetime / energy
         self.missile_time_alive[self.missile_launched & self.missile_alive] += dt
