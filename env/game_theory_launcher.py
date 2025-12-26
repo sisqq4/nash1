@@ -77,10 +77,11 @@ class GameTheoreticLauncher:
         return launch_pos, launch_times
 
     # ------------------------------------------------------------------
+    # 红弹初始位置设置
     def _sample_positions(self, K: int) -> np.ndarray:
         x = self.rng.uniform(0.0, 20.0, size=(K,))
         y = self.rng.uniform(-10.0, 10.0, size=(K,))
-        z = self.rng.uniform(-10.0, 10.0, size=(K,))
+        z = self.rng.uniform(1.0, 10.0, size=(K,))
         return np.stack([x, y, z], axis=1)
 
     def _sample_times(self, K: int, allowed_times: List[float]) -> np.ndarray:
