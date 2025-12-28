@@ -59,6 +59,7 @@ class Missiles:
         self,
         missile_pos: np.ndarray,
         missile_vel: np.ndarray,
+        missile_speed: np.ndarray | float,
         blue_pos: np.ndarray,
         blue_vel: np.ndarray,
         nav_gains: np.ndarray,
@@ -68,7 +69,7 @@ class Missiles:
             missile_vel,
             blue_pos,
             blue_vel,
-            self.speed,
+            missile_speed,
             self.dt,
             nav_gains,
         )

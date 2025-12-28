@@ -56,7 +56,7 @@ def update_missiles_pn(
     missile_vel: np.ndarray,
     blue_pos: np.ndarray,
     blue_vel: np.ndarray,
-    missile_speed: float,
+    missile_speed: float | np.ndarray,
     dt: float,
     nav_gain,
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -82,10 +82,17 @@ def update_missiles_pn(
     else:
         assert nav_array.shape[0] == M, "nav_gain array must have shape (M,)"
 
+    speed_array = np.asarray(missile_speed, dtype=float)
+    if speed_array.shape == ():
+        speed_array = np.full(M, float(speed_array))
+    else:
+        assert speed_array.shape[0] == M, "missile_speed array must have shape (M,)"
+
     for i in range(M):
         p = new_pos[i]
         v = new_vel[i]
         N_gain = float(nav_array[i])
+        target_speed = float(speed_array[i])
 
         speed = np.linalg.norm(v)
         if speed < 1e-6:
@@ -114,7 +121,7 @@ def update_missiles_pn(
             if u_norm > 1e-6:
                 u = u_new / u_norm
 
-        v = u * missile_speed
+        v = u * target_speed
         p = p + v * dt
 
         new_pos[i] = p

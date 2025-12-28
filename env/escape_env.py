@@ -49,6 +49,8 @@ class EscapeEnv:
         M = cfg.num_missiles
         self.missile_pos = np.zeros((M, 3), dtype=float)
         self.missile_vel = np.zeros((M, 3), dtype=float)
+        self.missile_speed = np.zeros(M, dtype=float)
+        self.missile_initial_speed = np.zeros(M, dtype=float)
         self.nav_gains = np.full(M, cfg.nav_gain, dtype=float)
 
         # Launch & lifetime
@@ -114,6 +116,8 @@ class EscapeEnv:
 
         # Velocities start at zero (not yet launched)
         self.missile_vel.fill(0.0)
+        self.missile_speed.fill(0.0)
+        self.missile_initial_speed.fill(0.0)
         self.nav_gains.fill(self.cfg.nav_gain)
 
         # Lifetime
@@ -170,11 +174,42 @@ class EscapeEnv:
                     direction = np.array([1.0, 0.0, 0.0])
                     n = 1.0
                 direction /= n
-                self.missile_vel[i] = direction * self.cfg.missile_speed
+                initial_speed = float(np.linalg.norm(self.blue_vel))
+                self.missile_initial_speed[i] = initial_speed
+                self.missile_speed[i] = initial_speed
+                self.missile_vel[i] = direction * initial_speed
                 self.missile_launched[i] = True
                 self.missile_time_alive[i] = 0.0
 
-        # 3) Differential-game update of nav_gains for launched & alive missiles
+        # 3) Update missile speed profiles for launched & alive missiles
+        idx_active = np.where(self.missile_launched & self.missile_alive)[0]
+        if idx_active.size > 0:
+            for i in idx_active:
+                next_time = self.missile_time_alive[i] + dt
+                if next_time <= self.cfg.missile_boost_duration:
+                    progress = next_time / self.cfg.missile_boost_duration
+                    speed = self.missile_initial_speed[i] + (
+                            self.cfg.missile_target_speed - self.missile_initial_speed[i]
+                    ) * progress
+                else:
+                    decay_steps = int(
+                        math.floor(
+                            (next_time - self.cfg.missile_boost_duration)
+                            / self.cfg.missile_speed_decay_interval
+                        )
+                    )
+                    speed = self.cfg.missile_target_speed * (
+                            self.cfg.missile_speed_decay_factor ** decay_steps
+                    )
+
+                if speed < self.cfg.missile_min_speed:
+                    self.missile_alive[i] = False
+                    self.nav_gains[i] = 0.0
+                    self.missile_vel[i] = 0.0
+                    self.missile_speed[i] = 0.0
+                else:
+                    self.missile_speed[i] = speed
+        # 4) Differential-game update of nav_gains for launched & alive missiles
         if self.diff_ctrl is not None:
             idx = np.where(self.missile_launched & self.missile_alive)[0]
             if idx.size > 0:
@@ -190,12 +225,13 @@ class EscapeEnv:
                 self.nav_gains[idx] = new_nav
                 self.nav_gains[~self.missile_alive] = 0.0
 
-        # 4) PN update for launched missiles
+        # 5) PN update for launched missiles
         idx_launched = np.where(self.missile_launched)[0]
         if idx_launched.size > 0:
             sub_pos, sub_vel = self.missile_model.step(
                 self.missile_pos[idx_launched],
                 self.missile_vel[idx_launched],
+                self.missile_speed[idx_launched],
                 self.blue_pos,
                 self.blue_vel,
                 self.nav_gains[idx_launched],
@@ -203,34 +239,40 @@ class EscapeEnv:
             self.missile_pos[idx_launched] = sub_pos
             self.missile_vel[idx_launched] = sub_vel
 
-        # 5) Update missile lifetime / energy
+        # 6) Update missile lifetime / energy
         self.missile_time_alive[self.missile_launched & self.missile_alive] += dt
         expired = self.missile_time_alive >= self.cfg.missile_max_flight_time
         self.missile_alive[expired] = False
         self.nav_gains[expired] = 0.0
+        self.missile_speed[expired] = 0.0
 
-        # 6) Enforce ground for missiles: z <= 0 destroys the missile
+        # 7) Enforce ground for missiles: z <= 0 destroys the missile
         for i in range(self.cfg.num_missiles):
             if self.missile_launched[i] and self.missile_alive[i] and self.missile_pos[i, 2] <= 0.0:
                 self.missile_pos[i, 2] = 0.0
                 self.missile_alive[i] = False
                 self.nav_gains[i] = 0.0
                 self.missile_vel[i] = 0.0
+                self.missile_speed[i] = 0.0
 
         if self.log_enabled:
             self._log_current_state()
 
-        # 7) Hit detection (line-segment / sphere)
+        # 8) Hit detection (line-segment / sphere)
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
 
         timeout = self.step_count >= self.cfg.max_steps
+        missiles_exhausted = not np.any(self.missile_alive)
 
-        # 8) Terminal conditions and reward
+        # 9) Terminal conditions and reward
         if crashed:
             reward = self.cfg.ground_crash_penalty
             self.done = True
         elif hit:
             reward = -1.0
+            self.done = True
+        elif missiles_exhausted:
+            reward = 1.0
             self.done = True
         elif timeout:
             reward = 1.0
@@ -249,6 +291,7 @@ class EscapeEnv:
             "hit": bool(hit),
             "timeout": bool(timeout),
             "crashed": bool(crashed),
+            "missiles_exhausted": bool(missiles_exhausted),
             "nav_gains": self.nav_gains.copy(),
             "missile_alive": self.missile_alive.copy(),
             "missile_launched": self.missile_launched.copy(),

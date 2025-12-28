@@ -33,6 +33,11 @@ class EnvConfig:
 
     # Missile dynamics
     missile_speed: float = 4900.0 / 3600.0   # km/s
+    missile_target_speed: float = 4800.0 / 3600.0  # km/s
+    missile_boost_duration: float = 5.0      # [s]
+    missile_speed_decay_interval: float = 1.0  # [s]
+    missile_speed_decay_factor: float = 0.99
+    missile_min_speed: float = 980.0 / 3600.0  # km/s
     num_missiles: int = 3
     nav_gain: float = 3.0
 
