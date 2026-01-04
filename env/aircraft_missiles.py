@@ -9,11 +9,12 @@ identical to the earlier implementation.
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
 
 from .missile_dynamics import update_blue_state, update_missiles_pn
+from .blue_action_library import BlueStrategy, build_escape_strategies
 
 
 class Aircraft:
@@ -23,6 +24,12 @@ class Aircraft:
         self.dt = float(dt)
         self.accel_mag = float(accel_mag)
         self.v_max = float(v_max)
+        self._strategies: List[BlueStrategy] = build_escape_strategies()
+        self._pending_actions: List[np.ndarray] = []
+
+    @property
+    def num_strategies(self) -> int:
+        return len(self._strategies)
 
     def step(
         self,
@@ -31,10 +38,17 @@ class Aircraft:
         action: int,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Update aircraft state according to the chosen action."""
+        if not self._pending_actions:
+            if not (0 <= action < len(self._strategies)):
+                raise ValueError(f"Invalid blue strategy {action}")
+            strategy = self._strategies[action]
+            self._pending_actions = [a.copy() for a in strategy.actions]
+
+        next_action = self._pending_actions.pop(0)
         pos, vel = update_blue_state(
             pos,
             vel,
-            int(action),
+            next_action,
             dt=self.dt,
             accel_mag=self.accel_mag,
             v_max=self.v_max,

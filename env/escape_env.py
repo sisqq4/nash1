@@ -65,7 +65,7 @@ class EscapeEnv:
 
         # Observation: blue pos (3) + blue vel (3) + rel missile pos (3*M)
         self.observation_dim = 3 + 3 + 3 * M
-        self.action_dim = 7
+        self.action_dim = self.blue_model.num_strategies
 
         # Logging / episode indexing
         self.log_enabled = bool(cfg.log_trajectories)

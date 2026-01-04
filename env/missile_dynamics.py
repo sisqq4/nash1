@@ -8,7 +8,7 @@ import numpy as np
 def update_blue_state(
     pos: np.ndarray,
     vel: np.ndarray,
-    action: int,
+    action: np.ndarray,
     dt: float,
     accel_mag: float,
     v_max: float,
@@ -16,30 +16,48 @@ def update_blue_state(
     """Update blue aircraft state with a simple 3D acceleration model.
 
     Actions:
-        0: keep current acceleration (no change)
-        1: +x
-        2: -x
-        3: +y
-        4: -y
-        5: +z
-        6: -z
+        action: [nx, ny, roll, pitch] from the blue action library.
+        - nx: tangential load factor (forward acceleration)
+        - ny: normal load factor (1.0 keeps level flight in the original model)
+        - roll: bank angle (rad) to rotate the normal load in the right/up plane
+        - pitch: placeholder (unused in this simplified model)
     """
     pos = pos.astype(float)
     vel = vel.astype(float)
 
-    a = np.zeros(3, dtype=float)
-    if action == 1:
-        a[0] = accel_mag
-    elif action == 2:
-        a[0] = -accel_mag
-    elif action == 3:
-        a[1] = accel_mag
-    elif action == 4:
-        a[1] = -accel_mag
-    elif action == 5:
-        a[2] = accel_mag
-    elif action == 6:
-        a[2] = -accel_mag
+    action = np.asarray(action, dtype=float).reshape(-1)
+    if action.shape[0] != 4:
+        raise ValueError("blue action must be a 4D vector [nx, ny, roll, pitch].")
+
+    nx, ny, roll, _ = action
+    ny_eff = ny - 1.0
+
+    speed = np.linalg.norm(vel)
+    if speed < 1e-6:
+        forward = np.array([1.0, 0.0, 0.0])
+    else:
+        forward = vel / speed
+
+    world_up = np.array([0.0, 0.0, 1.0])
+    right = np.cross(forward, world_up)
+    right_norm = np.linalg.norm(right)
+    if right_norm < 1e-6:
+        world_up = np.array([0.0, 1.0, 0.0])
+        right = np.cross(forward, world_up)
+        right_norm = np.linalg.norm(right)
+
+    if right_norm < 1e-6:
+        right = np.array([0.0, 1.0, 0.0])
+        right_norm = 1.0
+
+    right = right / right_norm
+    up = np.cross(right, forward)
+    up_norm = np.linalg.norm(up)
+    if up_norm > 1e-6:
+        up = up / up_norm
+
+    normal_dir = np.cos(roll) * up + np.sin(roll) * right
+    a = accel_mag * (nx * forward + ny_eff * normal_dir)
 
     vel = vel + a * dt
 
