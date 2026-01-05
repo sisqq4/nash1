@@ -67,6 +67,33 @@ class EnvConfig:
     # Ground / terrain
     ground_crash_penalty: float = -5.0  # penalty when blue hits the ground
 
+    # Reward shaping (units: km, km/s)
+    safe_altitude_min: float = 8.0
+    safe_altitude_max: float = 12.0
+    safe_altitude_tolerance: float = 1.0
+    height_reward_weight: float = 1.2
+    distance_ratio_weight: float = 1.0
+    danger_distance: float = 5.0
+    engagement_range: float = 25.0
+    danger_scale: float = 3.0
+
+    # Threat evaluation parameters
+    threat_heading_max: float = 0.5 * 3.141592653589793
+    threat_pitch_max: float = 0.5 * 3.141592653589793
+    threat_omega: float = 0.2
+    threat_dist_max: float = 160.0
+    threat_kd: float = 1.0
+    threat_sigma: float = 1e-8
+    threat_reward_relief: float = 0.25
+    threat_reward_increase: float = 1.0
+    threat_aggressive_threshold: float = 0.6
+    threat_aggressive_scale: float = 1.5
+
+    # Threat-driven maneuver overrides
+    threat_maneuver_start: float = 0.6
+    threat_maneuver_stop: float = 0.4
+    threat_maneuver_steps: int = 20
+
     # Logging / Tacview export
     save_dir: str = "outputs"
     log_trajectories: bool = True

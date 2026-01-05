@@ -26,6 +26,7 @@ class Aircraft:
         self.v_max = float(v_max)
         self._strategies: List[BlueStrategy] = build_escape_strategies()
         self._pending_actions: List[np.ndarray] = []
+        self._forced_actions: List[np.ndarray] = []
 
     @property
     def num_strategies(self) -> int:
@@ -38,13 +39,15 @@ class Aircraft:
         action: int,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Update aircraft state according to the chosen action."""
-        if not self._pending_actions:
-            if not (0 <= action < len(self._strategies)):
-                raise ValueError(f"Invalid blue strategy {action}")
-            strategy = self._strategies[action]
-            self._pending_actions = [a.copy() for a in strategy.actions]
-
-        next_action = self._pending_actions.pop(0)
+        if self._forced_actions:
+            next_action = self._forced_actions.pop(0)
+        else:
+            if not self._pending_actions:
+                if not (0 <= action < len(self._strategies)):
+                    raise ValueError(f"Invalid blue strategy {action}")
+                strategy = self._strategies[action]
+                self._pending_actions = [a.copy() for a in strategy.actions]
+            next_action = self._pending_actions.pop(0)
         pos, vel = update_blue_state(
             pos,
             vel,
@@ -54,6 +57,12 @@ class Aircraft:
             v_max=self.v_max,
         )
         return pos, vel
+
+    def force_actions(self, actions: List[np.ndarray]) -> None:
+        self._forced_actions = [a.copy() for a in actions]
+
+    def has_forced_actions(self) -> bool:
+        return bool(self._forced_actions)
 
 
 class Missiles:

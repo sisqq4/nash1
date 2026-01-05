@@ -12,6 +12,8 @@ from .missile_dynamics import update_blue_state, update_missiles_pn
 from .aircraft_missiles import Aircraft, Missiles
 from .diff_game_controller import DifferentialGameController
 from .acmi_io import write_csv
+from . import action_space
+from .threat_eval import ThreatEvaluator, ThreatParams
 from config import EnvConfig
 
 
@@ -62,6 +64,30 @@ class EscapeEnv:
         self.step_count = 0
         self.time = 0.0
         self.done = False
+        self.prev_threat = 1.0
+        self.initial_missile_distances = np.zeros(M, dtype=float)
+        self.forced_maneuver_steps = 0
+        self.threat_mode = False
+
+        criteria = np.array(
+            [
+                [1, 1 / 2, 1 / 8],
+                [2, 1, 1 / 6],
+                [8, 6, 1],
+            ],
+            dtype=float,
+        )
+        self.threat_evaluator = ThreatEvaluator(
+            ThreatParams(
+                heading_max=cfg.threat_heading_max,
+                pitch_max=cfg.threat_pitch_max,
+                omega=cfg.threat_omega,
+                dist_max=cfg.threat_dist_max,
+                kd=cfg.threat_kd,
+                sigma=cfg.threat_sigma,
+                criteria=criteria,
+            )
+        )
 
         # Observation: blue pos (3) + blue vel (3) + rel missile pos (3*M)
         self.observation_dim = 3 + 3 + 3 * M
@@ -123,6 +149,13 @@ class EscapeEnv:
         # Lifetime
         self.missile_alive[:] = True
         self.missile_time_alive[:] = 0.0
+        self.prev_threat = 1.0
+        self.forced_maneuver_steps = 0
+        self.threat_mode = False
+        self.initial_missile_distances = np.linalg.norm(
+            self.missile_pos - self.blue_pos[None, :],
+            axis=1,
+        )
 
         if self.log_enabled:
             self._init_logging()
@@ -145,11 +178,21 @@ class EscapeEnv:
         prev_missile_pos = self.missile_pos.copy()
 
         # 1) Update blue aircraft
+        threat_pre = self._compute_threat()
+        if threat_pre >= self.cfg.threat_maneuver_start:
+            self.threat_mode = False
+        elif threat_pre <= self.cfg.threat_maneuver_stop:
+            self.threat_mode = False
+
+        if self.threat_mode and not self.blue_model.has_forced_actions():
+            self._schedule_evasive_maneuver(threat_pre)
         self.blue_pos, self.blue_vel = self.blue_model.step(
             self.blue_pos,
             self.blue_vel,
             action,
         )
+        if self.forced_maneuver_steps > 0:
+            self.forced_maneuver_steps -= 1
 
         # Enforce ground (terrain) for blue
         crashed = False
@@ -278,7 +321,7 @@ class EscapeEnv:
             reward = 1.0
             self.done = True
         else:
-            reward = 0.01 * (min_dist / self.cfg.region_span)
+            reward = self._compute_reward(min_dist)
 
         if self.done and self.log_enabled:
             self._flush_logs_to_csv()
@@ -292,6 +335,7 @@ class EscapeEnv:
             "timeout": bool(timeout),
             "crashed": bool(crashed),
             "missiles_exhausted": bool(missiles_exhausted),
+            "threat": float(self.prev_threat),
             "nav_gains": self.nav_gains.copy(),
             "missile_alive": self.missile_alive.copy(),
             "missile_launched": self.missile_launched.copy(),
@@ -308,6 +352,127 @@ class EscapeEnv:
             axis=0,
         )
         return obs.astype(np.float32)
+
+    def _height_reward(self, altitude: float) -> float:
+        safe_min = self.cfg.safe_altitude_min
+        safe_max = self.cfg.safe_altitude_max
+        tolerance = self.cfg.safe_altitude_tolerance
+        hard_min = safe_min - tolerance
+        hard_max = safe_max + tolerance
+
+        if altitude < hard_min or altitude > hard_max:
+            return -1.5
+        if altitude < safe_min:
+            ratio = (altitude - hard_min) / (safe_min - hard_min)
+            return -1.0 + 2.0 * ratio
+        if altitude > safe_max:
+            ratio = (hard_max - altitude) / (hard_max - safe_max)
+            return -1.0 + 2.0 * ratio
+
+        center = (safe_min + safe_max) / 2.0
+        span = (safe_max - safe_min) / 2.0
+        offset = (altitude - center) / span
+        return 1.0 - offset ** 2
+
+    def _distance_reward(self) -> float:
+        rd = 0.0
+        rd_min = float("inf")
+        danger_distance = max(self.cfg.danger_distance, 1e-6)
+        engagement_range = self.cfg.engagement_range
+        scale = engagement_range / danger_distance
+
+        for i in range(self.cfg.num_missiles):
+            if not (self.missile_launched[i] and self.missile_alive[i]):
+                continue
+            dist = float(np.linalg.norm(self.missile_pos[i] - self.blue_pos))
+            dist = max(dist, 1e-6)
+            if scale <= 1.0:
+                rd = -1.5
+            else:
+                rd = math.log(dist / danger_distance) / math.log(scale)
+            rd = max(min(rd, 1.0), -1.5)
+            if rd < rd_min:
+                rd_min = rd
+
+        return 0.0 if rd_min == float("inf") else rd_min
+
+    def _compute_threat(self) -> float:
+        threat = 0.0
+        for i in range(self.cfg.num_missiles):
+            if not (self.missile_launched[i] and self.missile_alive[i]):
+                continue
+            treat = self.threat_evaluator.evaluate(
+                self.blue_pos,
+                self.blue_vel,
+                self.missile_pos[i],
+                self.missile_vel[i],
+            )
+            if treat > threat:
+                threat = treat
+        return float(threat)
+
+    def _compute_reward(self, min_dist: float) -> float:
+        rd = 0.0
+        danger_flag = min_dist <= self.cfg.danger_distance
+
+        # Height reward to avoid terrain
+        rd += self.cfg.height_reward_weight * self._height_reward(self.blue_pos[2])
+
+        # Relative distance reward against initial launch distances
+        active = self.missile_launched & self.missile_alive
+        if np.any(active):
+            ratios = []
+            for i in np.where(active)[0]:
+                d0 = max(self.initial_missile_distances[i], 1e-6)
+                d = float(np.linalg.norm(self.missile_pos[i] - self.blue_pos))
+                ratios.append(d / d0)
+            rd += self.cfg.distance_ratio_weight * (float(np.mean(ratios)) if ratios else 0.0)
+
+        # Scalar distance reward (log scale)
+        rd_dist = self._distance_reward()
+        scale = self.cfg.danger_scale if danger_flag else 1.0
+        rd += scale * rd_dist
+
+        # Threat reward: penalize increasing threats, reward relief
+        threat = self._compute_threat()
+        if threat <= self.prev_threat:
+            rd += self.cfg.threat_reward_relief * threat
+        else:
+            rd -= self.cfg.threat_reward_increase * threat
+
+        if threat > self.cfg.threat_aggressive_threshold:
+            rd -= self.cfg.threat_aggressive_scale * (threat - self.cfg.threat_aggressive_threshold)
+
+        self.prev_threat = threat
+        return float(rd)
+
+    def _schedule_evasive_maneuver(self, threat: float) -> None:
+        if self.forced_maneuver_steps > 0:
+            return
+        if threat <= 0.0:
+            return
+
+        primitives = action_space.get_simple_list()
+        if len(primitives) < 11:
+            return
+
+        idx_active = np.where(self.missile_launched & self.missile_alive)[0]
+        roll_sign = 1.0
+        climb = True
+        if idx_active.size > 0:
+            i = idx_active[0]
+            rel = self.missile_pos[i] - self.blue_pos
+            roll_sign = 1.0 if rel[1] >= 0 else -1.0
+            climb = rel[2] >= 0
+
+        base_turn = primitives[9] if roll_sign >= 0 else primitives[10]
+        base_vert = primitives[5] if climb else primitives[7]
+
+        steps = max(1, int(self.cfg.threat_maneuver_steps))
+        half = steps // 2
+        sequence = [base_turn] * half + [base_vert] * (steps - half)
+        self.blue_model.force_actions([np.asarray(a, dtype=float) for a in sequence])
+        self.forced_maneuver_steps = steps
 
     # ------------------------------------------------------------------
     # Hit detection helpers

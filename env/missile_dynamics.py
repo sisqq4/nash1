@@ -20,7 +20,7 @@ def update_blue_state(
         - nx: tangential load factor (forward acceleration)
         - ny: normal load factor (1.0 keeps level flight in the original model)
         - roll: bank angle (rad) to rotate the normal load in the right/up plane
-        - pitch: placeholder (unused in this simplified model)
+        - pitch: 0 = pull back to level flight, -1 = keep current pitch
     """
     pos = pos.astype(float)
     vel = vel.astype(float)
@@ -29,7 +29,7 @@ def update_blue_state(
     if action.shape[0] != 4:
         raise ValueError("blue action must be a 4D vector [nx, ny, roll, pitch].")
 
-    nx, ny, roll, _ = action
+    nx, ny, roll, pitch_cmd = action
     ny_eff = ny - 1.0
 
     speed = np.linalg.norm(vel)
@@ -58,6 +58,13 @@ def update_blue_state(
 
     normal_dir = np.cos(roll) * up + np.sin(roll) * right
     a = accel_mag * (nx * forward + ny_eff * normal_dir)
+
+    # Pitch command: when pitch_cmd == 0, bias acceleration to level the aircraft.
+    if pitch_cmd >= 0.0:
+        vz = float(vel[2])
+        if speed > 1e-6:
+            pitch_factor = np.clip(vz / speed, -1.0, 1.0)
+            a = a - accel_mag * pitch_factor * world_up
 
     vel = vel + a * dt
 
