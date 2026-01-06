@@ -84,6 +84,7 @@ def update_missiles_pn(
     missile_speed: float | np.ndarray,
     dt: float,
     nav_gain,
+    max_overload_g: float | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Proportional-navigation-like update for a batch of missiles.
 
@@ -95,7 +96,9 @@ def update_missiles_pn(
         missile_speed: scalar speed (kept constant) [km/s]
         dt: [s]
         nav_gain: scalar or shape (M,) navigation gain(s)
+        max_overload_g: optional max lateral load factor [g]
     """
+    g0_km_s2 = 9.80665 / 1000.0
     M = missile_pos.shape[0]
     new_pos = missile_pos.astype(float).copy()
     new_vel = missile_vel.astype(float).copy()
@@ -141,7 +144,14 @@ def update_missiles_pn(
 
         if perp_norm > 1e-6 and N_gain != 0.0:
             los_perp /= perp_norm
-            u_new = u + N_gain * los_perp * dt
+            delta_u = N_gain * los_perp * dt
+            if max_overload_g is not None and max_overload_g > 0.0 and speed > 1e-6:
+                omega_max = (max_overload_g * g0_km_s2) / speed
+                max_delta = omega_max * dt
+                delta_norm = np.linalg.norm(delta_u)
+                if delta_norm > max_delta > 0.0:
+                    delta_u = delta_u * (max_delta / delta_norm)
+            u_new = u + delta_u
             u_norm = np.linalg.norm(u_new)
             if u_norm > 1e-6:
                 u = u_new / u_norm

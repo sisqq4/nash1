@@ -74,9 +74,10 @@ class Missiles:
     vectorised implementation.
     """
 
-    def __init__(self, dt: float, speed: float) -> None:
+    def __init__(self, dt: float, speed: float, max_overload_g: float | None = None) -> None:
         self.dt = float(dt)
         self.speed = float(speed)
+        self.max_overload_g = None if max_overload_g is None else float(max_overload_g)
 
     def step(
         self,
@@ -95,4 +96,5 @@ class Missiles:
             missile_speed,
             self.dt,
             nav_gains,
+            max_overload_g=self.max_overload_g,
         )

@@ -40,6 +40,7 @@ class EnvConfig:
     missile_min_speed: float = 980.0 / 3600.0  # km/s
     num_missiles: int = 3
     nav_gain: float = 3.0
+    missile_max_overload_g: float = 30.0  # max lateral load factor [g]
 
     # Missile lifetime / energy
     missile_max_flight_time: float = 120.0   # [s]
@@ -103,7 +104,7 @@ class EnvConfig:
 class TrainConfig:
     """Training hyperparameters for the blue RL agent."""
 
-    episodes: int = 600
+    episodes: int = 1000
     gamma: float = 0.99
     lr: float = 1e-3
     batch_size: int = 64

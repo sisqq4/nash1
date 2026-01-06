@@ -43,6 +43,7 @@ class EscapeEnv:
         self.missile_model = Missiles(
             dt=cfg.dt,
             speed=cfg.missile_speed,
+            max_overload_g=cfg.missile_max_overload_g,
         )
 
         self.blue_pos = np.zeros(3, dtype=float)
