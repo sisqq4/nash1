@@ -53,3 +53,27 @@ class ReplayBuffer:
             self.next_obs_buf[idxs],
             self.done_buf[idxs],
         )
+
+    def get_state(self) -> dict:
+        return {
+            "capacity": self.capacity,
+            "obs_dim": self.obs_dim,
+            "obs_buf": self.obs_buf.copy(),
+            "next_obs_buf": self.next_obs_buf.copy(),
+            "act_buf": self.act_buf.copy(),
+            "rew_buf": self.rew_buf.copy(),
+            "done_buf": self.done_buf.copy(),
+            "size": self.size,
+            "ptr": self.ptr,
+        }
+
+    def load_state(self, state: dict) -> None:
+        self.capacity = int(state.get("capacity", self.capacity))
+        self.obs_dim = int(state.get("obs_dim", self.obs_dim))
+        self.obs_buf = np.array(state["obs_buf"], dtype=np.float32)
+        self.next_obs_buf = np.array(state["next_obs_buf"], dtype=np.float32)
+        self.act_buf = np.array(state["act_buf"], dtype=np.int64)
+        self.rew_buf = np.array(state["rew_buf"], dtype=np.float32)
+        self.done_buf = np.array(state["done_buf"], dtype=np.float32)
+        self.size = int(state.get("size", 0))
+        self.ptr = int(state.get("ptr", 0))

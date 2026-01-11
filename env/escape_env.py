@@ -55,6 +55,8 @@ class EscapeEnv:
         self.missile_speed = np.zeros(M, dtype=float)
         self.missile_initial_speed = np.zeros(M, dtype=float)
         self.nav_gains = np.full(M, cfg.nav_gain, dtype=float)
+        self.initial_nav_gains = np.full(M, cfg.nav_gain, dtype=float)
+        self.nav_gains = self.initial_nav_gains.copy()
 
         # Launch & lifetime
         self.missile_launch_times = np.zeros(M, dtype=float)
@@ -146,6 +148,9 @@ class EscapeEnv:
         self.missile_speed.fill(0.0)
         self.missile_initial_speed.fill(0.0)
         self.nav_gains.fill(self.cfg.nav_gain)
+        if self.initial_nav_gains.shape[0] != self.cfg.num_missiles:
+            self.initial_nav_gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
+        self.nav_gains = self.initial_nav_gains.copy()
 
         # Lifetime
         self.missile_alive[:] = True
@@ -163,6 +168,24 @@ class EscapeEnv:
             self._log_current_state()
 
         return self._get_obs()
+
+    def get_red_params(self) -> Dict[str, Any]:
+        return {
+            "launcher_state": self.launcher.get_state(),
+            "nav_gains": self.nav_gains.copy(),
+        }
+
+    def set_red_params(self, params: Dict[str, Any]) -> None:
+        launcher_state = params.get("launcher_state")
+        if launcher_state is not None:
+            self.launcher.set_state(launcher_state)
+
+        nav_gains = params.get("nav_gains")
+        if nav_gains is not None:
+            gains = np.asarray(nav_gains, dtype=float)
+            if gains.shape[0] != self.cfg.num_missiles:
+                gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
+            self.initial_nav_gains = gains.copy()
 
     # ------------------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:

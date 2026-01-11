@@ -24,6 +24,14 @@ class GameTheoreticLauncher:
         self.region = region
         self.rng = rng or np.random.default_rng()
 
+    def get_state(self) -> dict:
+        return {"rng_state": self.rng.bit_generator.state}
+
+    def set_state(self, state: dict) -> None:
+        rng_state = state.get("rng_state")
+        if rng_state is not None:
+            self.rng.bit_generator.state = rng_state
+
     # ------------------------------------------------------------------
     def compute_launch_plan(
         self,

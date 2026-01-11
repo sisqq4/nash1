@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-
+from typing import Optional
 
 @dataclass
 class EnvConfig:
@@ -38,7 +38,7 @@ class EnvConfig:
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
-    num_missiles: int = 3
+    num_missiles: int = 2
     nav_gain: float = 3.0
     missile_max_overload_g: float = 30.0  # max lateral load factor [g]
 
@@ -57,7 +57,7 @@ class EnvConfig:
     min_launch_interval: float = 1.0        # between launches [s]
 
     # Differential-game controller for PN gains
-    use_diff_game: bool = True
+    use_diff_game: bool = False
     diff_step_size: float = 0.2
     diff_delta_gain: float = 0.2
     diff_gain_min: float = 0.5
@@ -118,3 +118,9 @@ class TrainConfig:
     target_update_interval: int = 1_000
 
     print_interval: int = 10
+    checkpoint_dir: str = "outputs/checkpoints"
+    checkpoint_interval: int = 1
+    load_checkpoint_path: Optional[str] = None
+    load_blue: bool = True
+    load_red: bool = True
+    results_dir: str = "outputs/results"

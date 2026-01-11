@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any, Dict
 
 import numpy as np
 import torch
@@ -68,6 +68,30 @@ class DQNAgent:
         self.total_steps = 0
 
         self.target_update_interval = cfg.target_update_interval
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            "q_net": self.q_net.state_dict(),
+            "target_q_net": self.target_q_net.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "total_steps": self.total_steps,
+            "replay": self.replay.get_state(),
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        self.q_net.load_state_dict(state["q_net"])
+        target_state = state.get("target_q_net")
+        if target_state is None:
+            self.target_q_net.load_state_dict(self.q_net.state_dict())
+        else:
+            self.target_q_net.load_state_dict(target_state)
+        optimizer_state = state.get("optimizer")
+        if optimizer_state is not None:
+            self.optimizer.load_state_dict(optimizer_state)
+        self.total_steps = int(state.get("total_steps", 0))
+        replay_state = state.get("replay")
+        if replay_state is not None:
+            self.replay.load_state(replay_state)
 
     def _epsilon(self, eval_mode: bool) -> float:
         if eval_mode:
