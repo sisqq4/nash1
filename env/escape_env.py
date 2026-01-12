@@ -125,12 +125,13 @@ class EscapeEnv:
         )
 
         # Random initial velocity direction
-        v_dir = self.rng.normal(size=3)
-        v_norm = np.linalg.norm(v_dir)
-        if v_norm < 1e-6:
-            v_dir = np.array([1.0, 0.0, 0.0])
-            v_norm = 1.0
-        v_dir /= v_norm
+        # Random initial velocity direction in xy-plane
+        heading_min = math.radians(float(self.cfg.blue_heading_min))
+        heading_max = math.radians(float(self.cfg.blue_heading_max))
+        if heading_max < heading_min:
+            heading_min, heading_max = heading_max, heading_min
+        heading = self.rng.uniform(heading_min, heading_max)
+        v_dir = np.array([math.cos(heading), math.sin(heading), 0.0], dtype=float)
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
         # Red: matrix game for launch positions + times

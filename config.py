@@ -30,6 +30,9 @@ class EnvConfig:
     # Blue aircraft dynamics
     blue_max_speed: float = 2000.0 / 3600.0  # km/s
     blue_accel: float = 0.09                 # km/s^2 (~9 g)
+    # Blue aircraft initial heading (degrees in xy-plane, 0 along +x)
+    blue_heading_min: float = 135.0
+    blue_heading_max: float = 225.0
 
     # Missile dynamics
     missile_speed: float = 4900.0 / 3600.0   # km/s
@@ -38,7 +41,7 @@ class EnvConfig:
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
-    num_missiles: int = 2
+    num_missiles: int = 3
     nav_gain: float = 3.0
     missile_max_overload_g: float = 30.0  # max lateral load factor [g]
 
@@ -119,8 +122,8 @@ class TrainConfig:
 
     print_interval: int = 10
     checkpoint_dir: str = "outputs/checkpoints"
-    checkpoint_interval: int = 1
+    checkpoint_interval: int = 50
     load_checkpoint_path: Optional[str] = None
     load_blue: bool = True
-    load_red: bool = True
+    load_red: bool = False
     results_dir: str = "outputs/results"

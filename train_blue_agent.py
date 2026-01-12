@@ -201,8 +201,8 @@ def train() -> None:
 
     if per_episode_rows:
         df = pd.DataFrame(per_episode_rows)
-        excel_path = os.path.join(train_cfg.results_dir, "episode_summary.xlsx")
-        df.to_excel(excel_path, index=False)
+        excel_path = os.path.join(train_cfg.results_dir, "episode_summary.csv")
+        df.to_csv(excel_path, index=False)
 
 
 if __name__ == "__main__":
