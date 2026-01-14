@@ -11,7 +11,7 @@ from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
 from .missile_dynamics import update_blue_state, update_missiles_pn
 from .aircraft_missiles import Aircraft, Missiles
 from .diff_game_controller import DifferentialGameController
-from .acmi_io import write_csv
+from .acmi_io import write_csv, write_action_csv
 from . import action_space
 from .threat_eval import ThreatEvaluator, ThreatParams
 from config import EnvConfig
@@ -107,6 +107,8 @@ class EscapeEnv:
         self._plane_name: str | None = None
         self._missile_tracks: List[List[List[float]]] | None = None
         self._missile_names: List[str] | None = None
+        self._blue_action_log: List[List[float]] | None = None
+        self._blue_action_name: str | None = None
 
     # ------------------------------------------------------------------
     def reset(self) -> np.ndarray:
@@ -228,6 +230,8 @@ class EscapeEnv:
         # 2) Update time and possibly launch new missiles
         self.step_count += 1
         self.time += dt
+        if self.log_enabled and self._blue_action_log is not None:
+            self._blue_action_log.append([float(self.time), int(action)])
 
         for i in range(self.cfg.num_missiles):
             if (
@@ -575,6 +579,8 @@ class EscapeEnv:
             self._missile_tracks.append([])
 
         self._plane_track = []
+        self._blue_action_log = []
+        self._blue_action_name = f"plane_blue_actions.{plane_id}"
 
     def _compute_orientation(self, vel: np.ndarray) -> Tuple[float, float, float]:
         vx, vy, vz = vel
@@ -638,7 +644,17 @@ class EscapeEnv:
             if track:
                 write_csv(self.cfg.save_dir, name, track, episode_index=ep_idx)
 
+        if self._blue_action_log and self._blue_action_name is not None:
+            write_action_csv(
+                self.cfg.save_dir,
+                self._blue_action_name,
+                self._blue_action_log,
+                episode_index=ep_idx,
+            )
+
         self._plane_track = None
         self._missile_tracks = None
         self._plane_name = None
         self._missile_names = None
+        self._blue_action_log = None
+        self._blue_action_name = None

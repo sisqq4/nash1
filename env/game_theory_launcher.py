@@ -23,6 +23,7 @@ class GameTheoreticLauncher:
     def __init__(self, region: LaunchRegion, rng: np.random.Generator | None = None) -> None:
         self.region = region
         self.rng = rng or np.random.default_rng()
+        self._last_blue_initial_pos = np.zeros(3, dtype=float)
 
     def get_state(self) -> dict:
         return {"rng_state": self.rng.bit_generator.state}
@@ -50,6 +51,7 @@ class GameTheoreticLauncher:
         M = self.region.num_missiles
         launch_pos = np.zeros((M, 3), dtype=float)
         launch_times = np.zeros(M, dtype=float)
+        self._last_blue_initial_pos = np.asarray(blue_initial_pos, dtype=float).copy()
 
         chosen_times: List[float] = []
 
@@ -61,7 +63,7 @@ class GameTheoreticLauncher:
                 allowed_times = list(time_grid)
 
             K = self.region.candidate_launch_count
-            cand_pos = self._sample_positions(K)
+            cand_pos = self._sample_positions(K, blue_initial_pos)
             cand_times = self._sample_times(K, allowed_times)
 
             A = self._build_payoff_matrix_for_missile(
@@ -86,11 +88,37 @@ class GameTheoreticLauncher:
 
     # ------------------------------------------------------------------
     # 红弹初始位置设置
+    # 之前的设置(红弹在0点附近的一个立方体内发射)
     def _sample_positions(self, K: int) -> np.ndarray:
         x = self.rng.uniform(0.0, 20.0, size=(K,))
         y = self.rng.uniform(-10.0, 10.0, size=(K,))
         z = self.rng.uniform(1.0, 10.0, size=(K,))
         return np.stack([x, y, z], axis=1)
+    # 新的设置(红弹在蓝弹周围两个立方体之间的区域内发射)
+    def _sample_positions(
+            self,
+            K: int,
+            blue_initial_pos: np.ndarray | None = None,
+    ) -> np.ndarray:
+        if blue_initial_pos is None:
+            blue_pos = self._last_blue_initial_pos
+        else:
+            blue_pos = np.asarray(blue_initial_pos, dtype=float)
+        half_outer = 50.0
+        half_inner = 15.0
+
+        offsets = np.zeros((K, 3), dtype=float)
+        for i in range(K):
+            while True:
+                candidate = self.rng.uniform(-half_outer, half_outer, size=3)
+                if candidate[2] < 1.0:
+                    continue
+                if np.all(np.abs(candidate) <= half_inner):
+                    continue
+                offsets[i] = candidate
+                break
+
+        return blue_pos[None, :] + offsets
 
     def _sample_times(self, K: int, allowed_times: List[float]) -> np.ndarray:
         idx = self.rng.integers(0, len(allowed_times), size=K)

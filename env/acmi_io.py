@@ -41,6 +41,35 @@ def write_csv(
         writer = csv.writer(f)
         writer.writerows(rows)
 
+def write_action_csv(
+    save_dir: str,
+    fname: str,
+    data: List[List[float]],
+    episode_index: int | None = None,
+) -> None:
+    """Write blue action data to CSV.
+
+    Args:
+        save_dir: base directory (e.g. EnvConfig.save_dir)
+        fname: name without extension, e.g. "plane_blue_actions.1"
+        data: list of [time, action]
+        episode_index: if set, files go to save_dir/csv/{episode_index}/
+    """
+
+    csv_root = os.path.join(save_dir, "csv")
+    if episode_index is not None:
+        csv_dir = os.path.join(csv_root, str(episode_index))
+    else:
+        csv_dir = csv_root
+
+    os.makedirs(csv_dir, exist_ok=True)
+    path = os.path.join(csv_dir, fname + ".csv")
+
+    rows = [["time", "action"]] + data
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(rows)
+
 def _read_csv_no_header(path: str) -> List[List[float]]:
     rows: List[List[float]] = []
     with open(path, "r", newline="") as f:
@@ -136,7 +165,7 @@ def write_acmi(
         # Coordinate and heading conversion
         for i in range(len(apdata)):
             apdata[i][0] /= 111.3195   # km -> deg (approx)
-            apdata[i][1] /= 111.3195
+            apdata[i][1] = -apdata[i][1] / 111.3195
             apdata[i][2] *= 1000
             apdata[i][5] += 90.0       # yaw offset
 

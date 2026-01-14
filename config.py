@@ -42,7 +42,7 @@ class EnvConfig:
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
     num_missiles: int = 3
-    nav_gain: float = 3.0
+    nav_gain: float = 3.5
     missile_max_overload_g: float = 30.0  # max lateral load factor [g]
 
     # Missile lifetime / energy
