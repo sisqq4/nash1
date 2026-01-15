@@ -281,10 +281,10 @@ class Plane(Agent):
         self.missile_list: List[Missile] = missile_list
         self.action_step_count = 20
         self.act_list = []
-        self.max_speed = 410
+        self.max_speed = 600
         self.ismax = False
         self.dis_ref = -1
-        self.min_speed = 50
+        self.min_speed = 100
         self.act_list = []
         self.s_flag = 0
         self.start_action = 0  # 增加

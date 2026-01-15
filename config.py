@@ -28,7 +28,8 @@ class EnvConfig:
     max_steps: int = 1200    # episode length in steps (~120 s)
 
     # Blue aircraft dynamics
-    blue_max_speed: float = 2000.0 / 3600.0  # km/s
+    blue_max_speed: float = 600.0 / 1000.0  # km/s (600 m/s)
+    blue_min_speed: float = 100.0 / 1000.0  # km/s (100 m/s)
     blue_accel: float = 0.09                 # km/s^2 (~9 g)
     # Blue aircraft initial heading (degrees in xy-plane, 0 along +x)
     blue_heading_min: float = 135.0

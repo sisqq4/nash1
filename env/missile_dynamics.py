@@ -12,6 +12,7 @@ def update_blue_state(
     dt: float,
     accel_mag: float,
     v_max: float,
+    v_min: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Update blue aircraft state with a simple 3D acceleration model.
 
@@ -71,6 +72,9 @@ def update_blue_state(
     speed = np.linalg.norm(vel)
     if speed > v_max and speed > 1e-8:
         vel = vel / speed * v_max
+        speed = v_max
+    if speed < v_min and speed > 1e-8:
+        vel = vel / speed * v_min
 
     pos = pos + vel * dt
     return pos, vel

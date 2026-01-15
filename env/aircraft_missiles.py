@@ -20,10 +20,11 @@ from .blue_action_library import BlueStrategy, build_escape_strategies
 class Aircraft:
     """Blue aircraft model (evasive target)."""
 
-    def __init__(self, dt: float, accel_mag: float, v_max: float) -> None:
+    def __init__(self, dt: float, accel_mag: float, v_max: float, v_min: float) -> None:
         self.dt = float(dt)
         self.accel_mag = float(accel_mag)
         self.v_max = float(v_max)
+        self.v_min = float(v_min)
         self._strategies: List[BlueStrategy] = build_escape_strategies()
         self._pending_actions: List[np.ndarray] = []
         self._forced_actions: List[np.ndarray] = []
@@ -55,6 +56,7 @@ class Aircraft:
             dt=self.dt,
             accel_mag=self.accel_mag,
             v_max=self.v_max,
+            v_min=self.v_min,
         )
         return pos, vel
 

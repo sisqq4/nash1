@@ -39,6 +39,7 @@ class EscapeEnv:
             dt=cfg.dt,
             accel_mag=cfg.blue_accel,
             v_max=cfg.blue_max_speed,
+            v_min=cfg.blue_min_speed,
         )
         self.missile_model = Missiles(
             dt=cfg.dt,
