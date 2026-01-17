@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import os
 import time
+import json
+from dataclasses import asdict
 from typing import Tuple, Any, Dict, List
 
 import matplotlib
@@ -79,6 +81,22 @@ def load_checkpoint(
 def train() -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
+
+    run_id = time.strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join(env_cfg.save_dir, run_id)
+    env_cfg.save_dir = run_dir
+    train_cfg.checkpoint_dir = os.path.join(run_dir, "checkpoints")
+    train_cfg.results_dir = os.path.join(run_dir, "results")
+
+    os.makedirs(run_dir, exist_ok=True)
+    config_path = os.path.join(run_dir, "config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"env": asdict(env_cfg), "train": asdict(train_cfg)},
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
     if env_cfg.log_trajectories:
         os.makedirs(env_cfg.save_dir, exist_ok=True)

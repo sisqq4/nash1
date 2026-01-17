@@ -275,6 +275,10 @@ class EscapeEnv:
                             self.cfg.missile_speed_decay_factor ** decay_steps
                     )
 
+                speed = min(speed, self.cfg.missile_max_speed)
+                drag = self._missile_drag_decel(self.missile_pos[i, 2], speed)
+                speed = max(speed - drag * dt, 0.0)
+
                 if speed < self.cfg.missile_min_speed:
                     self.missile_alive[i] = False
                     self.nav_gains[i] = 0.0
@@ -475,6 +479,25 @@ class EscapeEnv:
 
         self.prev_threat = threat
         return float(rd)
+
+    def _air_density(self, altitude_km: float) -> float:
+        altitude_m = max(0.0, altitude_km * 1000.0)
+        rho0 = 1.225
+        t0 = 288.15
+        if altitude_m <= 11000.0:
+            t = t0 - 0.0065 * altitude_m
+            return rho0 * (t / t0) ** 4.25588
+        if altitude_m <= 20000.0:
+            return 0.36392 * math.exp((-altitude_m + 11000.0) / 6341.62)
+        t = 216.65 + 0.001 * (altitude_m - 20000.0)
+        return 0.088035 * (t / 216.65) ** -35.1632
+
+    def _missile_drag_decel(self, altitude_km: float, speed_km_s: float) -> float:
+        rho = self._air_density(altitude_km)
+        speed_m_s = max(0.0, speed_km_s * 1000.0)
+        drag_n = 0.5 * rho * speed_m_s ** 2 * self.cfg.missile_cd * self.cfg.missile_ref_area_m2
+        accel_m_s2 = drag_n / max(self.cfg.missile_mass_kg, 1e-6)
+        return accel_m_s2 / 1000.0
 
     def _schedule_evasive_maneuver(self, threat: float) -> None:
         if self.forced_maneuver_steps > 0:

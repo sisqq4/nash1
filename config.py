@@ -37,7 +37,8 @@ class EnvConfig:
 
     # Missile dynamics
     missile_speed: float = 4900.0 / 3600.0   # km/s
-    missile_target_speed: float = 4800.0 / 3600.0  # km/s
+    missile_target_speed: float = 2100.0 / 1000.0  # km/s (2100 m/s)
+    missile_max_speed: float = 2100.0 / 1000.0  # km/s (cap for boost speed)
     missile_boost_duration: float = 5.0      # [s]
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
@@ -45,6 +46,9 @@ class EnvConfig:
     num_missiles: int = 3
     nav_gain: float = 3.5
     missile_max_overload_g: float = 30.0  # max lateral load factor [g]
+    missile_cd: float = 0.28
+    missile_ref_area_m2: float = 0.015
+    missile_mass_kg: float = 157.0
 
     # Missile lifetime / energy
     missile_max_flight_time: float = 120.0   # [s]
@@ -108,7 +112,7 @@ class EnvConfig:
 class TrainConfig:
     """Training hyperparameters for the blue RL agent."""
 
-    episodes: int = 1000
+    episodes: int = 2000
     gamma: float = 0.99
     lr: float = 1e-3
     batch_size: int = 64
