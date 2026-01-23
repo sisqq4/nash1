@@ -28,6 +28,7 @@ class Aircraft:
         self._strategies: List[BlueStrategy] = build_escape_strategies()
         self._pending_actions: List[np.ndarray] = []
         self._forced_actions: List[np.ndarray] = []
+        self._roll_rad: float | None = None
 
     @property
     def num_strategies(self) -> int:
@@ -49,7 +50,7 @@ class Aircraft:
                 strategy = self._strategies[action]
                 self._pending_actions = [a.copy() for a in strategy.actions]
             next_action = self._pending_actions.pop(0)
-        pos, vel = update_blue_state(
+        pos, vel, self._roll_rad = update_blue_state(
             pos,
             vel,
             next_action,
@@ -57,6 +58,7 @@ class Aircraft:
             accel_mag=self.accel_mag,
             v_max=self.v_max,
             v_min=self.v_min,
+            roll_state=self._roll_rad,
         )
         return pos, vel
 
@@ -65,6 +67,9 @@ class Aircraft:
 
     def has_forced_actions(self) -> bool:
         return bool(self._forced_actions)
+
+    def reset(self) -> None:
+        self._roll_rad = None
 
 
 class Missiles:

@@ -116,6 +116,7 @@ class EscapeEnv:
         self.step_count = 0
         self.time = 0.0
         self.done = False
+        self.blue_model.reset()
 
         # Blue initial position: random in box (above ground)
         self.blue_pos = np.array(
@@ -316,14 +317,31 @@ class EscapeEnv:
             self.missile_pos[idx_launched] = sub_pos
             self.missile_vel[idx_launched] = sub_vel
 
-        # 6) Update missile lifetime / energy
+        # 6) Destroy missiles that lose target (blue outside +/- 60 deg FOV)
+        fov_cos = math.cos(math.radians(60.0))
+        for i in range(self.cfg.num_missiles):
+            if not (self.missile_launched[i] and self.missile_alive[i]):
+                continue
+            rel = self.blue_pos - self.missile_pos[i]
+            rel_norm = float(np.linalg.norm(rel))
+            vel_norm = float(np.linalg.norm(self.missile_vel[i]))
+            if rel_norm < 1e-6 or vel_norm < 1e-6:
+                continue
+            cos_angle = float(np.dot(self.missile_vel[i], rel) / (vel_norm * rel_norm))
+            if cos_angle < fov_cos:
+                self.missile_alive[i] = False
+                self.nav_gains[i] = 0.0
+                self.missile_vel[i] = 0.0
+                self.missile_speed[i] = 0.0
+
+        # 7) Update missile lifetime / energy
         self.missile_time_alive[self.missile_launched & self.missile_alive] += dt
         expired = self.missile_time_alive >= self.cfg.missile_max_flight_time
         self.missile_alive[expired] = False
         self.nav_gains[expired] = 0.0
         self.missile_speed[expired] = 0.0
 
-        # 7) Enforce ground for missiles: z <= 0 destroys the missile
+        # 8) Enforce ground for missiles: z <= 0 destroys the missile
         for i in range(self.cfg.num_missiles):
             if self.missile_launched[i] and self.missile_alive[i] and self.missile_pos[i, 2] <= 0.0:
                 self.missile_pos[i, 2] = 0.0
@@ -335,13 +353,13 @@ class EscapeEnv:
         if self.log_enabled:
             self._log_current_state()
 
-        # 8) Hit detection (line-segment / sphere)
+        # 9) Hit detection (line-segment / sphere)
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
 
         timeout = self.step_count >= self.cfg.max_steps
         missiles_exhausted = not np.any(self.missile_alive)
 
-        # 9) Terminal conditions and reward
+        # 10) Terminal conditions and reward
         if crashed:
             reward = self.cfg.ground_crash_penalty
             self.done = True

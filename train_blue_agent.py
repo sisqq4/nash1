@@ -153,7 +153,8 @@ def train() -> None:
             is_timeout = bool(episode_info.get("timeout", False))
             is_hit = bool(episode_info.get("hit", False))
             crashed = bool(episode_info.get("crashed", False))
-            if is_timeout and (not is_hit) and (not crashed):
+            missiles_exhausted = bool(episode_info.get("missiles_exhausted", False))
+            if is_timeout or missiles_exhausted and (not is_hit) and (not crashed):
                 success_count += 1
                 episode_success = True
 

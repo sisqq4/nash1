@@ -13,14 +13,15 @@ def update_blue_state(
     accel_mag: float,
     v_max: float,
     v_min: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Update blue aircraft state with a simple 3D acceleration model.
+    roll_state: float | None = None,
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Update blue aircraft state with a roll/pitch/yaw-based maneuver model.
 
     Actions:
-        action: [nx, ny, roll, pitch] from the blue action library.
-        - nx: tangential load factor (forward acceleration)
-        - ny: normal load factor (1.0 keeps level flight in the original model)
-        - roll: bank angle (rad) to rotate the normal load in the right/up plane
+        action: [nx, nz, roll, pitch] from the blue action library.
+        - nx: tangential load factor (forward acceleration, in g)
+        - nz: normal load factor (lift, in g)
+        - roll: target bank angle (rad)
         - pitch: 0 = pull back to level flight, -1 = keep current pitch
     """
     pos = pos.astype(float)
@@ -28,56 +29,57 @@ def update_blue_state(
 
     action = np.asarray(action, dtype=float).reshape(-1)
     if action.shape[0] != 4:
-        raise ValueError("blue action must be a 4D vector [nx, ny, roll, pitch].")
+        raise ValueError("blue action must be a 4D vector [nx, nz, roll, pitch].")
 
-    nx, ny, roll, pitch_cmd = action
-    ny_eff = ny - 1.0
+    nx, nz, target_roll, pitch_cmd = action
 
     speed = np.linalg.norm(vel)
     if speed < 1e-6:
-        forward = np.array([1.0, 0.0, 0.0])
+        yaw = 0.0
+        pitch = 0.0
     else:
-        forward = vel / speed
+        yaw = float(np.arctan2(vel[1], vel[0]))
+        pitch = float(np.arcsin(np.clip(vel[2] / speed, -1.0, 1.0)))
 
-    world_up = np.array([0.0, 0.0, 1.0])
-    right = np.cross(forward, world_up)
-    right_norm = np.linalg.norm(right)
-    if right_norm < 1e-6:
-        world_up = np.array([0.0, 1.0, 0.0])
-        right = np.cross(forward, world_up)
-        right_norm = np.linalg.norm(right)
+    current_roll = float(roll_state) if roll_state is not None else float(target_roll)
+    roll_rate = np.deg2rad(180.0)
+    roll_diff = target_roll - current_roll
+    roll_diff = np.arctan2(np.sin(roll_diff), np.cos(roll_diff))
+    roll_step = np.clip(roll_diff, -roll_rate * dt, roll_rate * dt)
+    current_roll += roll_step
 
-    if right_norm < 1e-6:
-        right = np.array([0.0, 1.0, 0.0])
-        right_norm = 1.0
+    k_induced = 0.04
+    drag_penalty = k_induced * (nz ** 2 - 1.0) if nz > 1.0 else 0.0
+    dv = accel_mag * (nx - drag_penalty - np.sin(pitch))
+    speed = speed + dv * dt
+    speed = float(np.clip(speed, v_min, v_max))
 
-    right = right / right_norm
-    up = np.cross(right, forward)
-    up_norm = np.linalg.norm(up)
-    if up_norm > 1e-6:
-        up = up / up_norm
-
-    normal_dir = np.cos(roll) * up + np.sin(roll) * right
-    a = accel_mag * (nx * forward + ny_eff * normal_dir)
+    v_safe = max(speed, 1e-6)
+    dpitch = (accel_mag / v_safe) * (nz * np.cos(current_roll) - np.cos(pitch))
 
     # Pitch command: when pitch_cmd == 0, bias acceleration to level the aircraft.
     if pitch_cmd >= 0.0:
-        vz = float(vel[2])
-        if speed > 1e-6:
-            pitch_factor = np.clip(vz / speed, -1.0, 1.0)
-            a = a - accel_mag * pitch_factor * world_up
+        dpitch = dpitch - 0.5 * pitch
 
-    vel = vel + a * dt
+    pitch_limit = 1.48
+    new_pitch = pitch + dpitch * dt
+    if abs(new_pitch) < pitch_limit:
+        pitch = new_pitch
 
-    speed = np.linalg.norm(vel)
-    if speed > v_max and speed > 1e-8:
-        vel = vel / speed * v_max
-        speed = v_max
-    if speed < v_min and speed > 1e-8:
-        vel = vel / speed * v_min
+    denom = max(np.cos(pitch), 1e-3)
+    dyaw = (accel_mag * nz * np.sin(current_roll)) / (v_safe * denom)
+    yaw = yaw + dyaw * dt
+    yaw = float(np.arctan2(np.sin(yaw), np.cos(yaw)))
 
+    vel = np.array(
+        [
+            speed * np.cos(pitch) * np.cos(yaw),
+            speed * np.cos(pitch) * np.sin(yaw),
+            speed * np.sin(pitch),
+        ]
+    )
     pos = pos + vel * dt
-    return pos, vel
+    return pos, vel, current_roll
 
 
 def update_missiles_pn(
