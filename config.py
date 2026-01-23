@@ -85,6 +85,8 @@ class EnvConfig:
     danger_distance: float = 5.0
     engagement_range: float = 25.0
     danger_scale: float = 3.0
+    climb_angle_limit_deg: float = 80.0
+    climb_angle_penalty: float = 0.5
 
     # Threat evaluation parameters
     threat_heading_max: float = 0.5 * 3.141592653589793

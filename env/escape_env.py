@@ -495,6 +495,12 @@ class EscapeEnv:
         if threat > self.cfg.threat_aggressive_threshold:
             rd -= self.cfg.threat_aggressive_scale * (threat - self.cfg.threat_aggressive_threshold)
 
+        # Penalize near-vertical climb/descent maneuvers.
+        horiz_speed = float(np.linalg.norm(self.blue_vel[:2]))
+        climb_angle_deg = math.degrees(math.atan2(self.blue_vel[2], max(horiz_speed, 1e-8)))
+        if abs(climb_angle_deg) >= self.cfg.climb_angle_limit_deg:
+            rd -= self.cfg.climb_angle_penalty
+
         self.prev_threat = threat
         return float(rd)
 

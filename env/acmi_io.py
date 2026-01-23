@@ -91,6 +91,7 @@ def write_acmi(
     source_dir: str,
     time_unit: float,
     explode_time: int = 10,
+    add_plane_explosion: bool = True,
 ) -> None:
     """Aggregate CSV files from one episode into a Tacview .acmi file.
 
@@ -186,7 +187,7 @@ def write_acmi(
         end_time = start_time + len(apdata) * time_unit
         _insert_in_dict(data_dict, str(end_time), "-" + obj_no + "\n")
 
-        if obj_type == "plane" and apdata:
+        if obj_type == "plane" and apdata and add_plane_explosion:
             last = apdata[-1]
             expl_line = (
                 obj_no

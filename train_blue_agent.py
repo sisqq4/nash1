@@ -191,12 +191,21 @@ def train() -> None:
         if env_cfg.log_trajectories and ep % 10 == 0:
             csv_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
             if os.path.isdir(csv_dir):
+                add_plane_explosion = True
+                if episode_info is not None:
+                    is_timeout = bool(episode_info.get("timeout", False))
+                    is_hit = bool(episode_info.get("hit", False))
+                    crashed = bool(episode_info.get("crashed", False))
+                    missiles_exhausted = bool(episode_info.get("missiles_exhausted", False))
+                    if (is_timeout or missiles_exhausted) and (not is_hit) and (not crashed):
+                        add_plane_explosion = False
                 target_name = f"session_ep{ep:04d}"
                 write_acmi(
                     target_name=target_name,
                     source_dir=csv_dir,
                     time_unit=env_cfg.dt,
                     explode_time=10,
+                    add_plane_explosion=add_plane_explosion,
                 )
                 print(f"[ACMI] Episode {ep}: wrote {target_name}.acmi from {csv_dir}")
             else:
