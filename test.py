@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from config import EnvConfig, TrainConfig
 from train_blue_agent import make_env_and_agent, load_checkpoint
-
+from env.acmi_io import write_acmi
 
 def _is_success(info: Dict[str, Any] | None) -> bool:
     if not info:
@@ -19,6 +20,19 @@ def _is_success(info: Dict[str, Any] | None) -> bool:
     missiles_exhausted = bool(info.get("missiles_exhausted", False))
     return (is_timeout or missiles_exhausted) and (not is_hit) and (not is_crashed)
 
+def _apply_config(obj: Any, cfg: Dict[str, Any]) -> None:
+    for key, value in cfg.items():
+        if hasattr(obj, key):
+            setattr(obj, key, value)
+
+
+def _load_run_config(checkpoint_path: str) -> Dict[str, Any] | None:
+    run_dir = os.path.abspath(os.path.join(os.path.dirname(checkpoint_path), os.pardir))
+    config_path = os.path.join(run_dir, "config.json")
+    if not os.path.isfile(config_path):
+        return None
+    with open(config_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def evaluate(
     checkpoint_path: str,
@@ -27,10 +41,25 @@ def evaluate(
     load_blue: bool = True,
     load_red: bool = True,
     report_interval: int = 10,
+    reward_mode: Optional[str] = None,
 ) -> float:
     env_cfg = EnvConfig()
-    env_cfg.log_trajectories = False
+
     train_cfg = TrainConfig()
+    loaded_config = _load_run_config(checkpoint_path)
+    if loaded_config:
+        _apply_config(env_cfg, loaded_config.get("env", {}))
+        _apply_config(train_cfg, loaded_config.get("train", {}))
+
+    if reward_mode is not None:
+        env_cfg.reward_mode = reward_mode
+        train_cfg.reward_mode = reward_mode
+
+    run_dir = os.path.abspath(os.path.join(os.path.dirname(checkpoint_path), os.pardir))
+    env_cfg.save_dir = os.path.join(run_dir, "test")
+    env_cfg.log_trajectories = True
+    os.makedirs(env_cfg.save_dir, exist_ok=True)
+    env_cfg.log_trajectories = False
 
     env, agent = make_env_and_agent(env_cfg, train_cfg, seed=seed)
 
@@ -62,6 +91,25 @@ def evaluate(
         episode_win = _is_success(info)
         if episode_win:
             win_count += 1
+        if env_cfg.log_trajectories:
+            csv_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
+            if os.path.isdir(csv_dir):
+                add_plane_explosion = True
+                if info is not None:
+                    is_timeout = bool(info.get("timeout", False))
+                    is_hit = bool(info.get("hit", False))
+                    crashed = bool(info.get("crashed", False))
+                    missiles_exhausted = bool(info.get("missiles_exhausted", False))
+                    if (is_timeout or missiles_exhausted) and (not is_hit) and (not crashed):
+                        add_plane_explosion = False
+                target_name = f"test_ep{ep:04d}"
+                write_acmi(
+                    target_name=target_name,
+                    source_dir=csv_dir,
+                    time_unit=env_cfg.dt,
+                    explode_time=10,
+                    add_plane_explosion=add_plane_explosion,
+                )
 
         if report_interval > 0 and ep % report_interval == 0:
             win_rate = win_count / ep
@@ -77,12 +125,14 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a trained blue agent.")
-    parser.add_argument("--checkpoint", type=str, default="outputs/20260119_112414/checkpoints/checkpoint_ep2000.pt", help="Path to checkpoint .pt file")
+    parser.add_argument("--checkpoint", type=str, default="outputs/20260124_155452/checkpoints/checkpoint_ep2000.pt", help="Path to checkpoint .pt file")
     parser.add_argument("--episodes", type=int, default=1000, help="Number of evaluation episodes")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--no-load-blue", action="store_true", help="Skip loading blue agent params")
-    parser.add_argument("--load-red", action="store_true", help="Load red launcher params")
+    parser.add_argument("--load-red", action=argparse.BooleanOptionalAction, default=True, help="Load red launcher params (default: true)")
     parser.add_argument("--report-interval", type=int, default=10, help="Episodes between progress logs")
+    parser.add_argument("--reward-mode", type=str, default=None,
+                        help="Override reward mode (auto, short_range, mid_small_azimuth, mid_large_azimuth)")
     return parser.parse_args()
 
 
@@ -98,6 +148,7 @@ def main() -> None:
         load_blue=not args.no_load_blue,
         load_red=args.load_red,
         report_interval=args.report_interval,
+        reward_mode=args.reward_mode,
     )
 
 
