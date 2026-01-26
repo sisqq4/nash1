@@ -79,21 +79,15 @@
 
 ---
 
-## 二、蓝方强化学习智能体（DQN）
+## 二、蓝方强化学习智能体（Rainbow DQN）
 
-文件：`agent/dqn_agent.py`, `agent/replay_buffer.py`
+文件：`agent/rainbow_dqn_agent.py`, `agent/replay_buffer.py`
 
-- 使用一个两层 MLP 作为 Q 网络：
-  ```python
-  QNetwork(obs_dim, action_dim, hidden_dim=128)
-  ```
-- 使用经验回放 + 目标网络：
-  - `ReplayBuffer` 存储 `(obs, act, rew, next_obs, done)`；
-  - 使用 MSE 损失拟合 Bellman 目标：
-    \[
-    y = r + \gamma (1-d) \max_{a'} Q_{\text{target}}(s', a')
-    \]
-- 探索策略：线性衰减的 epsilon-greedy（从 1.0 逐渐下降到 0.05）。
+- 采用 Rainbow DQN 组合增强项：
+  - Dueling 架构 + NoisyNet 提升探索；
+  - Distributional C51 预测回报分布；
+  - Double DQN + 目标网络降低过估计；
+  - Prioritized Replay + n-step return 提升采样效率。
 
 ---
 
@@ -110,7 +104,7 @@ python train_blue_agent.py
 逻辑：
 
 1. 创建 `EnvConfig` 与 `TrainConfig`；
-2. 使用 `make_env_and_agent` 生成 `EscapeEnv` 与 `DQNAgent`；
+2. 使用 `make_env_and_agent` 生成 `EscapeEnv` 与 `RainbowDQNAgent`；
 3. 循环若干 episode：
    - 调用 `env.reset()`；
    - 反复 `agent.select_action -> env.step -> agent.store_transition -> agent.update`；

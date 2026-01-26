@@ -151,6 +151,15 @@ class TrainConfig:
     epsilon_end: float = 0.05
     epsilon_decay: int = 20_000
 
+    n_step: int = 3
+    atom_size: int = 51
+    v_min: float = -10.0
+    v_max: float = 10.0
+    noisy_std: float = 0.5
+    per_alpha: float = 0.6
+    per_beta_start: float = 0.4
+    per_beta_frames: int = 100_000
+
     target_update_interval: int = 1_000
 
     print_interval: int = 10
