@@ -34,6 +34,10 @@ class Aircraft:
     def num_strategies(self) -> int:
         return len(self._strategies)
 
+    @property
+    def roll_rad(self) -> float | None:
+        return self._roll_rad
+
     def step(
         self,
         pos: np.ndarray,

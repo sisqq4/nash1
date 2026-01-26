@@ -69,6 +69,8 @@ class EscapeEnv:
         self.time = 0.0
         self.done = False
         self.prev_threat = 1.0
+        self.prev_min_dist = cfg.region_span
+        self.prev_blue_vel = np.zeros(3, dtype=float)
         self.initial_missile_distances = np.zeros(M, dtype=float)
         self.forced_maneuver_steps = 0
         self.threat_mode = False
@@ -167,6 +169,8 @@ class EscapeEnv:
             self.missile_pos - self.blue_pos[None, :],
             axis=1,
         )
+        self.prev_min_dist = float(np.min(self.initial_missile_distances))
+        self.prev_blue_vel = self.blue_vel.copy()
 
         if self.log_enabled:
             self._init_logging()
@@ -204,6 +208,7 @@ class EscapeEnv:
         dt = self.cfg.dt
 
         prev_blue_pos = self.blue_pos.copy()
+        prev_blue_vel = self.blue_vel.copy()
         prev_missile_pos = self.missile_pos.copy()
 
         # 1) Update blue aircraft
@@ -373,7 +378,7 @@ class EscapeEnv:
             reward = 1.0
             self.done = True
         else:
-            reward = self._compute_reward(min_dist)
+            reward = self._compute_reward(min_dist, prev_blue_vel)
 
         if self.done and self.log_enabled:
             self._flush_logs_to_csv()
@@ -463,46 +468,157 @@ class EscapeEnv:
                 threat = treat
         return float(threat)
 
-    def _compute_reward(self, min_dist: float) -> float:
-        rd = 0.0
-        danger_flag = min_dist <= self.cfg.danger_distance
+    def _compute_reward(self, min_dist: float, prev_blue_vel: np.ndarray) -> float:
+        primary_idx = self._select_primary_missile()
+        azimuth_deg = (
+            self._compute_missile_azimuth_deg(primary_idx) if primary_idx is not None else 0.0
+        )
 
-        # Height reward to avoid terrain
-        rd += self.cfg.height_reward_weight * self._height_reward(self.blue_pos[2])
+        mode = self.cfg.reward_mode
+        if mode == "short_range":
+            reward = self._reward_short_range(min_dist, prev_blue_vel)
+        elif mode == "mid_small_azimuth":
+            reward = self._reward_mid_small_azimuth(min_dist, azimuth_deg, primary_idx)
+        elif mode == "mid_large_azimuth":
+            reward = self._reward_mid_large_azimuth(min_dist, azimuth_deg, primary_idx)
+        else:
+            if min_dist <= self.cfg.short_range_distance:
+                reward = self._reward_short_range(min_dist, prev_blue_vel)
+            elif azimuth_deg <= self.cfg.small_azimuth_deg:
+                reward = self._reward_mid_small_azimuth(min_dist, azimuth_deg, primary_idx)
+            else:
+                reward = self._reward_mid_large_azimuth(min_dist, azimuth_deg, primary_idx)
 
-        # Relative distance reward against initial launch distances
-        active = self.missile_launched & self.missile_alive
-        if np.any(active):
-            ratios = []
-            for i in np.where(active)[0]:
-                d0 = max(self.initial_missile_distances[i], 1e-6)
-                d = float(np.linalg.norm(self.missile_pos[i] - self.blue_pos))
-                ratios.append(d / d0)
-            rd += self.cfg.distance_ratio_weight * (float(np.mean(ratios)) if ratios else 0.0)
-
-        # Scalar distance reward (log scale)
-        rd_dist = self._distance_reward()
-        scale = self.cfg.danger_scale if danger_flag else 1.0
-        rd += scale * rd_dist
-
-        # Threat reward: penalize increasing threats, reward relief
         threat = self._compute_threat()
         if threat <= self.prev_threat:
-            rd += self.cfg.threat_reward_relief * threat
+            reward += self.cfg.threat_reward_relief * threat
         else:
-            rd -= self.cfg.threat_reward_increase * threat
-
+            reward -= self.cfg.threat_reward_increase * threat
         if threat > self.cfg.threat_aggressive_threshold:
-            rd -= self.cfg.threat_aggressive_scale * (threat - self.cfg.threat_aggressive_threshold)
-
-        # Penalize near-vertical climb/descent maneuvers.
-        horiz_speed = float(np.linalg.norm(self.blue_vel[:2]))
-        climb_angle_deg = math.degrees(math.atan2(self.blue_vel[2], max(horiz_speed, 1e-8)))
-        if abs(climb_angle_deg) >= self.cfg.climb_angle_limit_deg:
-            rd -= self.cfg.climb_angle_penalty
+            reward -= self.cfg.threat_aggressive_scale * (threat - self.cfg.threat_aggressive_threshold)
 
         self.prev_threat = threat
-        return float(rd)
+        self.prev_min_dist = float(min_dist)
+        self.prev_blue_vel = self.blue_vel.copy()
+        return float(reward)
+
+    def _select_primary_missile(self) -> int | None:
+        active = np.where(self.missile_launched & self.missile_alive)[0]
+        if active.size == 0:
+            return None
+        dists = np.linalg.norm(self.missile_pos[active] - self.blue_pos[None, :], axis=1)
+        return int(active[int(np.argmin(dists))])
+
+    def _compute_missile_azimuth_deg(self, idx: int) -> float:
+        rel = self.blue_pos - self.missile_pos[idx]
+        rel_xy = np.array([rel[0], rel[1]], dtype=float)
+        vel_xy = np.array([self.missile_vel[idx][0], self.missile_vel[idx][1]], dtype=float)
+        rel_norm = float(np.linalg.norm(rel_xy))
+        vel_norm = float(np.linalg.norm(vel_xy))
+        if rel_norm < 1e-6 or vel_norm < 1e-6:
+            return 0.0
+        cos_angle = float(np.dot(rel_xy, vel_xy) / (rel_norm * vel_norm))
+        cos_angle = float(np.clip(cos_angle, -1.0, 1.0))
+        return float(math.degrees(math.acos(cos_angle)))
+
+    def _compute_turn_rate_deg(self, prev_vel: np.ndarray) -> float:
+        prev_xy = np.array([prev_vel[0], prev_vel[1]], dtype=float)
+        curr_xy = np.array([self.blue_vel[0], self.blue_vel[1]], dtype=float)
+        prev_norm = float(np.linalg.norm(prev_xy))
+        curr_norm = float(np.linalg.norm(curr_xy))
+        if prev_norm < 1e-6 or curr_norm < 1e-6:
+            return 0.0
+        cos_angle = float(np.dot(prev_xy, curr_xy) / (prev_norm * curr_norm))
+        cos_angle = float(np.clip(cos_angle, -1.0, 1.0))
+        angle_deg = float(math.degrees(math.acos(cos_angle)))
+        return angle_deg / max(self.cfg.dt, 1e-6)
+
+    def _reward_short_range(self, min_dist: float, prev_blue_vel: np.ndarray) -> float:
+        reward = 0.0
+        distance_gain = (min_dist - self.prev_min_dist) / max(self.cfg.short_range_distance, 1e-6)
+        reward += self.cfg.short_range_distance_weight * distance_gain
+
+        roll_rad = self.blue_model.roll_rad or 0.0
+        roll_target = math.radians(self.cfg.short_turn_roll_target_deg)
+        roll_score = min(abs(roll_rad) / max(roll_target, 1e-6), 1.0)
+        reward += self.cfg.short_range_roll_weight * roll_score
+
+        turn_rate = self._compute_turn_rate_deg(prev_blue_vel)
+        turn_score = min(turn_rate / 180.0, 1.0)
+        reward += self.cfg.short_range_turn_weight * turn_score
+
+        speed = float(np.linalg.norm(self.blue_vel))
+        speed_norm = (speed - self.cfg.blue_min_speed) / max(
+            self.cfg.blue_max_speed - self.cfg.blue_min_speed, 1e-6
+        )
+        reward += self.cfg.short_range_speed_weight * speed_norm
+
+        reward += self.cfg.short_range_height_weight * self._height_reward(self.blue_pos[2])
+        return reward
+
+    def _reward_mid_small_azimuth(
+        self,
+        min_dist: float,
+        azimuth_deg: float,
+        primary_idx: int | None,
+    ) -> float:
+        reward = 0.0
+        azimuth_score = 1.0 - min(azimuth_deg / max(self.cfg.small_azimuth_deg, 1e-6), 1.0)
+        reward += self.cfg.mid_small_azimuth_weight * azimuth_score
+
+        reward += self.cfg.mid_small_height_weight * self._height_reward(self.blue_pos[2])
+
+        if primary_idx is not None:
+            rel = self.blue_pos - self.missile_pos[primary_idx]
+            rel_norm = float(np.linalg.norm(rel))
+            if rel_norm > 1e-6:
+                opposite = float(np.dot(self.blue_vel, rel) / (rel_norm * max(np.linalg.norm(self.blue_vel), 1e-6)))
+                reward += self.cfg.mid_small_opposite_weight * max(opposite, 0.0)
+
+        speed = float(np.linalg.norm(self.blue_vel))
+        speed_norm = (speed - self.cfg.blue_min_speed) / max(
+            self.cfg.blue_max_speed - self.cfg.blue_min_speed, 1e-6
+        )
+        reward += self.cfg.mid_small_speed_weight * speed_norm
+
+        roll_rad = self.blue_model.roll_rad or 0.0
+        roll_penalty = abs(roll_rad) / math.pi
+        climb_angle = math.degrees(math.atan2(self.blue_vel[2], max(np.linalg.norm(self.blue_vel[:2]), 1e-6)))
+        level_penalty = (abs(climb_angle) / 90.0) + roll_penalty
+        reward -= self.cfg.mid_small_level_weight * min(level_penalty, 1.0)
+        return reward
+
+    def _reward_mid_large_azimuth(
+        self,
+        min_dist: float,
+        azimuth_deg: float,
+        primary_idx: int | None,
+    ) -> float:
+        reward = 0.0
+        distance_gain = (min_dist - self.prev_min_dist) / max(self.cfg.short_range_distance, 1e-6)
+        reward += self.cfg.mid_large_distance_weight * distance_gain
+
+        azimuth_score = 1.0 - min(azimuth_deg / 180.0, 1.0)
+        reward += self.cfg.mid_large_azimuth_weight * azimuth_score
+
+        reward += self.cfg.mid_large_height_weight * self._height_reward(self.blue_pos[2])
+
+        speed = float(np.linalg.norm(self.blue_vel))
+        speed_norm = (speed - self.cfg.blue_min_speed) / max(
+            self.cfg.blue_max_speed - self.cfg.blue_min_speed, 1e-6
+        )
+        reward += self.cfg.mid_large_speed_weight * speed_norm
+
+        roll_rad = self.blue_model.roll_rad or 0.0
+        roll_penalty = abs(roll_rad) / math.pi
+        climb_angle = math.degrees(math.atan2(self.blue_vel[2], max(np.linalg.norm(self.blue_vel[:2]), 1e-6)))
+        level_penalty = (abs(climb_angle) / 90.0) + roll_penalty
+        reward -= self.cfg.mid_large_level_weight * min(level_penalty, 1.0)
+
+        if min_dist <= self.cfg.short_range_distance + self.cfg.short_range_buffer:
+            roll_zero_score = 1.0 - min(abs(roll_rad) / math.radians(30.0), 1.0)
+            reward += self.cfg.mid_large_roll_zero_weight * roll_zero_score
+        return reward
 
     def _air_density(self, altitude_km: float) -> float:
         altitude_m = max(0.0, altitude_km * 1000.0)

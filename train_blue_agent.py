@@ -81,6 +81,7 @@ def load_checkpoint(
 def train() -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
+    env_cfg.reward_mode = train_cfg.reward_mode
 
     run_id = time.strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(env_cfg.save_dir, run_id)

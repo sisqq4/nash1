@@ -105,6 +105,32 @@ class EnvConfig:
     threat_maneuver_stop: float = 0.4
     threat_maneuver_steps: int = 20
 
+    # Reward selection
+    reward_mode: str = "auto"  # auto | short_range | mid_small_azimuth | mid_large_azimuth
+    short_range_distance: float = 8.0  # km
+    small_azimuth_deg: float = 30.0
+    short_range_buffer: float = 2.0  # km buffer before switching to short-range rules
+    short_turn_roll_target_deg: float = 60.0
+
+    short_range_distance_weight: float = 1.0
+    short_range_turn_weight: float = 0.6
+    short_range_roll_weight: float = 0.4
+    short_range_speed_weight: float = 0.3
+    short_range_height_weight: float = 0.4
+
+    mid_small_azimuth_weight: float = 1.0
+    mid_small_height_weight: float = 0.8
+    mid_small_opposite_weight: float = 0.8
+    mid_small_speed_weight: float = 0.4
+    mid_small_level_weight: float = 0.4
+
+    mid_large_distance_weight: float = 1.0
+    mid_large_azimuth_weight: float = 0.8
+    mid_large_height_weight: float = 0.8
+    mid_large_speed_weight: float = 0.4
+    mid_large_level_weight: float = 0.4
+    mid_large_roll_zero_weight: float = 0.6
+
     # Logging / Tacview export
     save_dir: str = "outputs"
     log_trajectories: bool = True
@@ -134,3 +160,4 @@ class TrainConfig:
     load_blue: bool = True
     load_red: bool = False
     results_dir: str = "outputs/results"
+    reward_mode: str = "auto"
