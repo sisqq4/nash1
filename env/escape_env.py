@@ -40,6 +40,7 @@ class EscapeEnv:
             accel_mag=cfg.blue_accel,
             v_max=cfg.blue_max_speed,
             v_min=cfg.blue_min_speed,
+            max_sustained_pitch=math.radians(cfg.max_sustained_pitch_deg),
         )
         self.missile_model = Missiles(
             dt=cfg.dt,
@@ -453,6 +454,13 @@ class EscapeEnv:
 
         return 0.0 if rd_min == float("inf") else rd_min
 
+    def _ground_proximity_penalty(self, altitude: float) -> float:
+        threshold = self.cfg.ground_proximity_threshold
+        if threshold <= 0.0 or altitude >= threshold:
+            return 0.0
+        ratio = (threshold - max(altitude, 0.0)) / threshold
+        return -self.cfg.ground_proximity_penalty * ratio
+
     def _compute_threat(self) -> float:
         threat = 0.0
         for i in range(self.cfg.num_missiles):
@@ -496,6 +504,8 @@ class EscapeEnv:
             reward -= self.cfg.threat_reward_increase * threat
         if threat > self.cfg.threat_aggressive_threshold:
             reward -= self.cfg.threat_aggressive_scale * (threat - self.cfg.threat_aggressive_threshold)
+
+        reward += self._ground_proximity_penalty(self.blue_pos[2])
 
         self.prev_threat = threat
         self.prev_min_dist = float(min_dist)

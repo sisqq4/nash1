@@ -13,6 +13,7 @@ def update_blue_state(
     accel_mag: float,
     v_max: float,
     v_min: float,
+    max_sustained_pitch: float | None = None,
     roll_state: float | None = None,
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """Update blue aircraft state with a roll/pitch/yaw-based maneuver model.
@@ -62,6 +63,8 @@ def update_blue_state(
         dpitch = dpitch - 0.5 * pitch
 
     pitch_limit = 1.48
+    if max_sustained_pitch is not None:
+        pitch_limit = min(pitch_limit, float(max_sustained_pitch))
     new_pitch = pitch + dpitch * dt
     if abs(new_pitch) < pitch_limit:
         pitch = new_pitch

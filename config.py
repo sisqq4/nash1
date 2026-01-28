@@ -44,8 +44,8 @@ class EnvConfig:
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
     num_missiles: int = 3
-    nav_gain: float = 3.5
-    missile_max_overload_g: float = 30.0  # max lateral load factor [g]
+    nav_gain: float = 4.5
+    missile_max_overload_g: float = 45.0  # max lateral load factor [g] (40-50g target)
     missile_cd: float = 0.28
     missile_ref_area_m2: float = 0.015
     missile_mass_kg: float = 157.0
@@ -54,7 +54,7 @@ class EnvConfig:
     missile_max_flight_time: float = 120.0   # [s]
 
     # Hit radius (warhead lethal radius, km)
-    hit_radius: float = 0.015  # ~15 m
+    hit_radius: float = 0.03  # ~30 m
 
     # Game-theoretic launcher (position + launch time)
     candidate_launch_count: int = 32
@@ -75,6 +75,8 @@ class EnvConfig:
 
     # Ground / terrain
     ground_crash_penalty: float = -5.0  # penalty when blue hits the ground
+    ground_proximity_threshold: float = 2.0  # km, start penalizing below this altitude
+    ground_proximity_penalty: float = 1.0  # max penalty applied at ground level
 
     # Reward shaping (units: km, km/s)
     safe_altitude_min: float = 8.0
@@ -87,6 +89,7 @@ class EnvConfig:
     danger_scale: float = 3.0
     climb_angle_limit_deg: float = 80.0
     climb_angle_penalty: float = 0.5
+    max_sustained_pitch_deg: float = 30.0  # limit for sustained climb actions
 
     # Threat evaluation parameters
     threat_heading_max: float = 0.5 * 3.141592653589793

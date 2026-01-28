@@ -125,7 +125,7 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a trained blue agent.")
-    parser.add_argument("--checkpoint", type=str, default="outputs/20260124_155452/checkpoints/checkpoint_ep2000.pt", help="Path to checkpoint .pt file")
+    parser.add_argument("--checkpoint", type=str, default="outputs/20260126_170325/checkpoints/checkpoint_ep1900.pt", help="Path to checkpoint .pt file")
     parser.add_argument("--episodes", type=int, default=1000, help="Number of evaluation episodes")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--no-load-blue", action="store_true", help="Skip loading blue agent params")
