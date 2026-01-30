@@ -107,6 +107,7 @@ class Missiles:
         blue_pos: np.ndarray,
         blue_vel: np.ndarray,
         nav_gains: np.ndarray,
+        max_overload_g: float | np.ndarray | None = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         return update_missiles_pn(
             missile_pos,
@@ -116,5 +117,5 @@ class Missiles:
             missile_speed,
             self.dt,
             nav_gains,
-            max_overload_g=self.max_overload_g,
+            max_overload_g=self.max_overload_g if max_overload_g is None else max_overload_g,
         )

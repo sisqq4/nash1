@@ -65,6 +65,9 @@ class EscapeEnv:
         self.missile_launched = np.zeros(M, dtype=bool)
         self.missile_alive = np.ones(M, dtype=bool)
         self.missile_time_alive = np.zeros(M, dtype=float)
+        self.missile_is_boosting = np.zeros(M, dtype=bool)
+        self.missile_fuel_depleted = np.zeros(M, dtype=bool)
+        self.missile_seeker_lost_time = np.zeros(M, dtype=float)
 
         self.step_count = 0
         self.time = 0.0
@@ -163,6 +166,9 @@ class EscapeEnv:
         # Lifetime
         self.missile_alive[:] = True
         self.missile_time_alive[:] = 0.0
+        self.missile_is_boosting[:] = False
+        self.missile_fuel_depleted[:] = False
+        self.missile_seeker_lost_time[:] = 0.0
         self.prev_threat = 1.0
         self.forced_maneuver_steps = 0
         self.threat_mode = False
@@ -260,40 +266,89 @@ class EscapeEnv:
                 self.missile_vel[i] = direction * initial_speed
                 self.missile_launched[i] = True
                 self.missile_time_alive[i] = 0.0
+                self.missile_is_boosting[i] = True
+                self.missile_fuel_depleted[i] = False
+                self.missile_seeker_lost_time[i] = 0.0
 
-        # 3) Update missile speed profiles for launched & alive missiles
-        idx_active = np.where(self.missile_launched & self.missile_alive)[0]
-        if idx_active.size > 0:
-            for i in idx_active:
-                next_time = self.missile_time_alive[i] + dt
-                if next_time <= self.cfg.missile_boost_duration:
-                    progress = next_time / self.cfg.missile_boost_duration
-                    speed = self.missile_initial_speed[i] + (
-                            self.cfg.missile_target_speed - self.missile_initial_speed[i]
-                    ) * progress
-                else:
-                    decay_steps = int(
-                        math.floor(
-                            (next_time - self.cfg.missile_boost_duration)
-                            / self.cfg.missile_speed_decay_interval
-                        )
-                    )
-                    speed = self.cfg.missile_target_speed * (
-                            self.cfg.missile_speed_decay_factor ** decay_steps
-                    )
-
-                speed = min(speed, self.cfg.missile_max_speed)
-                drag = self._missile_drag_decel(self.missile_pos[i, 2], speed)
-                speed = max(speed - drag * dt, 0.0)
-
-                if speed < self.cfg.missile_min_speed:
+        # 3) Seeker constraints (FOV, memory, terminal blind zone)
+        guidance_active = np.zeros(self.cfg.num_missiles, dtype=bool)
+        fov_cos = math.cos(math.radians(self.cfg.missile_seeker_fov_deg))
+        blind_range_km = self.cfg.missile_terminal_blind_range_km
+        for i in range(self.cfg.num_missiles):
+            if not (self.missile_launched[i] and self.missile_alive[i]):
+                continue
+            rel = self.blue_pos - self.missile_pos[i]
+            rel_norm = float(np.linalg.norm(rel))
+            if rel_norm <= blind_range_km:
+                self.missile_seeker_lost_time[i] = 0.0
+                guidance_active[i] = True
+                continue
+            vel_norm = float(np.linalg.norm(self.missile_vel[i]))
+            if rel_norm < 1e-6 or vel_norm < 1e-6:
+                self.missile_seeker_lost_time[i] = 0.0
+                guidance_active[i] = True
+                continue
+            cos_angle = float(np.dot(self.missile_vel[i], rel) / (vel_norm * rel_norm))
+            if cos_angle >= fov_cos:
+                self.missile_seeker_lost_time[i] = 0.0
+                guidance_active[i] = True
+            else:
+                self.missile_seeker_lost_time[i] += dt
+                if self.missile_seeker_lost_time[i] > self.cfg.missile_seeker_memory_time:
                     self.missile_alive[i] = False
                     self.nav_gains[i] = 0.0
                     self.missile_vel[i] = 0.0
                     self.missile_speed[i] = 0.0
+                    self.missile_is_boosting[i] = False
+                else:
+                    guidance_active[i] = False
+
+        nav_gains_effective = self.nav_gains.copy()
+        nav_gains_effective[~guidance_active] = 0.0
+
+        # 4) Update missile speed profiles for launched & alive missiles
+        idx_active = np.where(self.missile_launched & self.missile_alive)[0]
+        max_overload = np.full(self.cfg.num_missiles, self.cfg.missile_max_overload_g, dtype=float)
+        if idx_active.size > 0:
+            for i in idx_active:
+                speed = float(self.missile_speed[i])
+                if speed <= 1e-6:
+                    speed = float(np.linalg.norm(self.missile_vel[i]))
+                if not self.missile_fuel_depleted[i]:
+                    speed = min(speed + self.cfg.missile_boost_accel * dt, self.cfg.missile_target_speed)
+                    if speed >= self.cfg.missile_target_speed - 1e-9:
+                        self.missile_fuel_depleted[i] = True
+                        self.missile_is_boosting[i] = False
+                else:
+                    self.missile_is_boosting[i] = False
+
+                speed_m_s = speed * 1000.0
+                max_g_aero = (speed_m_s ** 2) / 20000.0 if speed_m_s > 1e-6 else 0.0
+                limit_g = min(max_g_aero, self.cfg.missile_max_overload_g)
+                max_overload[i] = limit_g
+
+                total_g = self._estimate_missile_load_g(
+                    self.missile_pos[i],
+                    self.missile_vel[i],
+                    self.blue_pos,
+                    nav_gains_effective[i],
+                    speed,
+                    dt,
+                    limit_g,
+                )
+                drag = self._missile_drag_decel(self.missile_pos[i, 2], speed, total_g)
+                speed = max(speed - drag * dt, 0.0)
+
+                if speed < self.cfg.missile_stall_speed:
+                    self.missile_alive[i] = False
+                    self.nav_gains[i] = 0.0
+                    self.missile_vel[i] = 0.0
+                    self.missile_speed[i] = 0.0
+                    self.missile_is_boosting[i] = False
                 else:
                     self.missile_speed[i] = speed
-        # 4) Differential-game update of nav_gains for launched & alive missiles
+
+        # 5) Differential-game update of nav_gains for launched & alive missiles
         if self.diff_ctrl is not None:
             idx = np.where(self.missile_launched & self.missile_alive)[0]
             if idx.size > 0:
@@ -309,7 +364,10 @@ class EscapeEnv:
                 self.nav_gains[idx] = new_nav
                 self.nav_gains[~self.missile_alive] = 0.0
 
-        # 5) PN update for launched missiles
+        nav_gains_effective = self.nav_gains.copy()
+        nav_gains_effective[~guidance_active] = 0.0
+
+        # 6) PN update for launched missiles
         idx_launched = np.where(self.missile_launched)[0]
         if idx_launched.size > 0:
             sub_pos, sub_vel = self.missile_model.step(
@@ -318,27 +376,11 @@ class EscapeEnv:
                 self.missile_speed[idx_launched],
                 self.blue_pos,
                 self.blue_vel,
-                self.nav_gains[idx_launched],
+                nav_gains_effective[idx_launched],
+                max_overload_g=max_overload[idx_launched],
             )
             self.missile_pos[idx_launched] = sub_pos
             self.missile_vel[idx_launched] = sub_vel
-
-        # 6) Destroy missiles that lose target (blue outside +/- 60 deg FOV)
-        fov_cos = math.cos(math.radians(60.0))
-        for i in range(self.cfg.num_missiles):
-            if not (self.missile_launched[i] and self.missile_alive[i]):
-                continue
-            rel = self.blue_pos - self.missile_pos[i]
-            rel_norm = float(np.linalg.norm(rel))
-            vel_norm = float(np.linalg.norm(self.missile_vel[i]))
-            if rel_norm < 1e-6 or vel_norm < 1e-6:
-                continue
-            cos_angle = float(np.dot(self.missile_vel[i], rel) / (vel_norm * rel_norm))
-            if cos_angle < fov_cos:
-                self.missile_alive[i] = False
-                self.nav_gains[i] = 0.0
-                self.missile_vel[i] = 0.0
-                self.missile_speed[i] = 0.0
 
         # 7) Update missile lifetime / energy
         self.missile_time_alive[self.missile_launched & self.missile_alive] += dt
@@ -346,6 +388,7 @@ class EscapeEnv:
         self.missile_alive[expired] = False
         self.nav_gains[expired] = 0.0
         self.missile_speed[expired] = 0.0
+        self.missile_is_boosting[expired] = False
 
         # 8) Enforce ground for missiles: z <= 0 destroys the missile
         for i in range(self.cfg.num_missiles):
@@ -355,6 +398,7 @@ class EscapeEnv:
                 self.nav_gains[i] = 0.0
                 self.missile_vel[i] = 0.0
                 self.missile_speed[i] = 0.0
+                self.missile_is_boosting[i] = False
 
         if self.log_enabled:
             self._log_current_state()
@@ -642,11 +686,53 @@ class EscapeEnv:
         t = 216.65 + 0.001 * (altitude_m - 20000.0)
         return 0.088035 * (t / 216.65) ** -35.1632
 
-    def _missile_drag_decel(self, altitude_km: float, speed_km_s: float) -> float:
-        rho = self._air_density(altitude_km)
+    def _estimate_missile_load_g(
+        self,
+        missile_pos: np.ndarray,
+        missile_vel: np.ndarray,
+        blue_pos: np.ndarray,
+        nav_gain: float,
+        speed_km_s: float,
+        dt: float,
+        max_overload_g: float,
+    ) -> float:
+        speed = float(np.linalg.norm(missile_vel))
+        if speed < 1e-6 or nav_gain == 0.0:
+            return 0.0
+
+        u = missile_vel / speed
+        r = blue_pos - missile_pos
+        r_norm = float(np.linalg.norm(r))
+        if r_norm < 1e-6:
+            return 0.0
+        los = r / r_norm
+        los_perp = los - np.dot(los, u) * u
+        perp_norm = float(np.linalg.norm(los_perp))
+        if perp_norm < 1e-6:
+            return 0.0
+        los_perp /= perp_norm
+
+        delta_u = nav_gain * los_perp * dt
+        if max_overload_g > 0.0:
+            g0_km_s2 = 9.80665 / 1000.0
+            omega_max = (max_overload_g * g0_km_s2) / max(speed, 1e-6)
+            max_delta = omega_max * dt
+            delta_norm = float(np.linalg.norm(delta_u))
+            if delta_norm > max_delta > 0.0:
+                delta_u *= max_delta / delta_norm
+
+        omega = float(np.linalg.norm(delta_u)) / max(dt, 1e-6)
+        lateral_acc_km_s2 = omega * max(speed_km_s, 0.0)
+        return (lateral_acc_km_s2 * 1000.0) / 9.80665
+
+    def _missile_drag_decel(self, altitude_km: float, speed_km_s: float, total_g: float) -> float:
+        altitude_m = max(0.0, altitude_km * 1000.0)
         speed_m_s = max(0.0, speed_km_s * 1000.0)
-        drag_n = 0.5 * rho * speed_m_s ** 2 * self.cfg.missile_cd * self.cfg.missile_ref_area_m2
-        accel_m_s2 = drag_n / max(self.cfg.missile_mass_kg, 1e-6)
+        v_sq = speed_m_s ** 2
+        density_factor = math.exp(-altitude_m / self.cfg.missile_scale_height_m)
+        drag_parasitic = self.cfg.missile_k_drag_base * density_factor * v_sq
+        drag_induced = self.cfg.missile_k_induced * (total_g ** 2) / (density_factor * v_sq + 1.0)
+        accel_m_s2 = drag_parasitic + drag_induced
         return accel_m_s2 / 1000.0
 
     def _schedule_evasive_maneuver(self, threat: float) -> None:

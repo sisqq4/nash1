@@ -17,9 +17,9 @@ class EnvConfig:
 
     # Blue aircraft initial region (random inside this box)
     blue_x_min: float = 40.0
-    blue_x_max: float = 60.0
-    blue_y_min: float = -10.0
-    blue_y_max: float = 10.0
+    blue_x_max: float = 50.0
+    blue_y_min: float = 0.0
+    blue_y_max: float = 0.0
     blue_z_min: float = 4.0
     blue_z_max: float = 10.0
 
@@ -49,6 +49,14 @@ class EnvConfig:
     missile_cd: float = 0.28
     missile_ref_area_m2: float = 0.015
     missile_mass_kg: float = 157.0
+    missile_boost_accel: float = 30.0 * 9.8 / 1000.0  # km/s^2 (30g boost)
+    missile_stall_speed: float = 300.0 / 1000.0  # km/s (stall speed)
+    missile_k_drag_base: float = 0.00005
+    missile_k_induced: float = 30000.0
+    missile_scale_height_m: float = 8500.0
+    missile_seeker_fov_deg: float = 60.0
+    missile_seeker_memory_time: float = 2.0  # [s]
+    missile_terminal_blind_range_km: float = 0.8
 
     # Missile lifetime / energy
     missile_max_flight_time: float = 120.0   # [s]

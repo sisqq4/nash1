@@ -93,7 +93,7 @@ def update_missiles_pn(
     missile_speed: float | np.ndarray,
     dt: float,
     nav_gain,
-    max_overload_g: float | None = None,
+    max_overload_g: float | np.ndarray | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Proportional-navigation-like update for a batch of missiles.
 
@@ -125,11 +125,20 @@ def update_missiles_pn(
     else:
         assert speed_array.shape[0] == M, "missile_speed array must have shape (M,)"
 
+    max_g_array = None
+    if max_overload_g is not None:
+        max_g_array = np.asarray(max_overload_g, dtype=float)
+        if max_g_array.shape == ():
+            max_g_array = np.full(M, float(max_g_array))
+        else:
+            assert max_g_array.shape[0] == M, "max_overload_g array must have shape (M,)"
+
     for i in range(M):
         p = new_pos[i]
         v = new_vel[i]
         N_gain = float(nav_array[i])
         target_speed = float(speed_array[i])
+        max_g = None if max_g_array is None else float(max_g_array[i])
 
         speed = np.linalg.norm(v)
         if speed < 1e-6:
@@ -154,8 +163,8 @@ def update_missiles_pn(
         if perp_norm > 1e-6 and N_gain != 0.0:
             los_perp /= perp_norm
             delta_u = N_gain * los_perp * dt
-            if max_overload_g is not None and max_overload_g > 0.0 and speed > 1e-6:
-                omega_max = (max_overload_g * g0_km_s2) / speed
+            if max_g is not None and max_g > 0.0 and speed > 1e-6:
+                omega_max = (max_g * g0_km_s2) / speed
                 max_delta = omega_max * dt
                 delta_norm = np.linalg.norm(delta_u)
                 if delta_norm > max_delta > 0.0:
