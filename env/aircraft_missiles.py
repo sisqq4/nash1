@@ -9,6 +9,7 @@ identical to the earlier implementation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
@@ -16,6 +17,21 @@ import numpy as np
 from .missile_dynamics import update_blue_state, update_missiles_pn
 from .blue_action_library import BlueStrategy, build_escape_strategies
 
+@dataclass
+class MissileBinding:
+    """Binding metadata between a missile and its carrier aircraft."""
+
+    index: int
+    launch_time: float
+    launch_position: np.ndarray
+
+
+@dataclass
+class CarrierAircraft:
+    """Static aircraft that carries a list of missiles."""
+
+    position: np.ndarray
+    missiles: List[MissileBinding]
 
 class Aircraft:
     """Blue aircraft model (evasive target)."""

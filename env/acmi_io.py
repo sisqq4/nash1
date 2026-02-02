@@ -146,8 +146,12 @@ def write_acmi(
             continue
         obj_type, side = ts_parts[0], ts_parts[1]
 
-        colors = {"blue": "Blue", "red": "Red"}
-        color = colors.get(side, "Blue")
+        plane_colors = {"blue": "Blue", "red": "Red"}
+        missile_colors = {"blue": "Blue", "red": "DarkRed"}
+        if obj_type == "plane":
+            color = plane_colors.get(side, "Blue")
+        else:
+            color = missile_colors.get(side, "Blue")
 
         if obj_type == "plane":
             obj_name = "F16"
