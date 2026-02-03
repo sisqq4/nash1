@@ -16,11 +16,11 @@ class EnvConfig:
     region_span: float = 160.0  # km
 
     # Blue aircraft initial region (random inside this box)
-    blue_x_min: float = 40.0
-    blue_x_max: float = 50.0
+    blue_x_min: float = 45.0
+    blue_x_max: float = 45.0
     blue_y_min: float = 0.0
     blue_y_max: float = 0.0
-    blue_z_min: float = 4.0
+    blue_z_min: float = 10.0
     blue_z_max: float = 10.0
 
     # Simulation
@@ -32,7 +32,7 @@ class EnvConfig:
     blue_min_speed: float = 100.0 / 1000.0  # km/s (100 m/s)
     blue_accel: float = 0.09                 # km/s^2 (~9 g)
     # Blue aircraft initial heading (degrees in xy-plane, 0 along +x)
-    blue_heading_min: float = -180.0
+    blue_heading_min: float = 180.0
     blue_heading_max: float = 180.0
 
     # Missile dynamics
@@ -43,7 +43,7 @@ class EnvConfig:
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
-    num_missiles: int = 3
+    num_missiles: int = 1
     nav_gain: float = 4.5
     missile_max_overload_g: float = 45.0  # max lateral load factor [g] (40-50g target)
     missile_cd: float = 0.28

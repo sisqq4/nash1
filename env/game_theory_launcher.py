@@ -90,9 +90,9 @@ class GameTheoreticLauncher:
     # 红弹初始位置设置
     # 之前的设置(红弹在0点附近的一个立方体内发射)
     def _sample_positions(self, K: int) -> np.ndarray:
-        x = self.rng.uniform(0.0, 20.0, size=(K,))
-        y = self.rng.uniform(-10.0, 10.0, size=(K,))
-        z = self.rng.uniform(1.0, 10.0, size=(K,))
+        x = self.rng.uniform(0.0, 0.0, size=(K,))
+        y = self.rng.uniform(0.0, 0.0, size=(K,))
+        z = self.rng.uniform(10.0, 10.0, size=(K,))
         return np.stack([x, y, z], axis=1)
     # 新的设置(红弹在蓝弹周围两个立方体之间的区域内发射)
     # def _sample_positions(
