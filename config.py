@@ -16,8 +16,8 @@ class EnvConfig:
     region_span: float = 160.0  # km
 
     # Blue aircraft initial region (random inside this box)
-    blue_x_min: float = 45.0
-    blue_x_max: float = 45.0
+    blue_x_min: float = 30.0
+    blue_x_max: float = 30.0
     blue_y_min: float = 0.0
     blue_y_max: float = 0.0
     blue_z_min: float = 10.0
@@ -34,6 +34,14 @@ class EnvConfig:
     # Blue aircraft initial heading (degrees in xy-plane, 0 along +x)
     blue_heading_min: float = 180.0
     blue_heading_max: float = 180.0
+
+    # Red aircraft dynamics / launch plan
+    red_x: float = 0.0
+    red_y: float = 0.0
+    red_z: float = 10.0
+    red_speed: float = 600.0 / 1000.0  # km/s (600 m/s)
+    red_heading_deg: float = 0.0  # 0 along +x
+    red_launch_start_distance_km: float = 5.0
 
     # Missile dynamics
     missile_speed: float = 4900.0 / 3600.0   # km/s

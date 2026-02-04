@@ -9,7 +9,7 @@ import numpy as np
 
 from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
 from .missile_dynamics import update_blue_state, update_missiles_pn
-from .aircraft_missiles import Aircraft, Missiles, CarrierAircraft, MissileBinding
+from .aircraft_missiles import Aircraft, Missiles, CarrierAircraft, MissileBinding, StraightLineRedFlight
 from .diff_game_controller import DifferentialGameController
 from .acmi_io import write_csv, write_action_csv
 from . import action_space
@@ -47,10 +47,12 @@ class EscapeEnv:
             speed=cfg.missile_speed,
             max_overload_g=cfg.missile_max_overload_g,
         )
-
+        self.red_flight_model = StraightLineRedFlight(dt=cfg.dt)
         self.blue_pos = np.zeros(3, dtype=float)
         self.blue_vel = np.zeros(3, dtype=float)
-
+        self.red_pos = np.zeros(3, dtype=float)
+        self.red_vel = np.zeros(3, dtype=float)
+        self.red_distance_traveled = 0.0
         M = cfg.num_missiles
         self.missile_pos = np.zeros((M, 3), dtype=float)
         self.missile_launch_positions = np.zeros((M, 3), dtype=float)
@@ -150,31 +152,64 @@ class EscapeEnv:
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
         # Red: matrix game for launch positions + times
-        launch_pos, launch_times = self.launcher.compute_launch_plan(
-            blue_initial_pos=self.blue_pos,
-            blue_speed=self.cfg.blue_max_speed,
-            missile_speed=self.cfg.missile_speed,
+        # 红方的初始导弹发射位置选择，使用矩阵博弈选择初始点
+        # launch_pos, launch_times = self.launcher.compute_launch_plan(
+        #     blue_initial_pos=self.blue_pos,
+        #     blue_speed=self.cfg.blue_max_speed,
+        #     missile_speed=self.cfg.missile_speed,
+        # )
+        # self.missile_launch_positions = launch_pos.reshape(self.cfg.num_missiles, 3)
+        # self.missile_pos = self.missile_launch_positions.copy()
+        # self.missile_pos = launch_pos.reshape(self.cfg.num_missiles, 3)
+        # self.missile_launch_times = launch_times.astype(float)
+        # self.missile_launched[:] = False
+        #
+        # self.red_aircraft = []
+        # self.blue_payload = []
+        # for i in range(self.cfg.num_missiles):
+        #     binding = MissileBinding(
+        #         index=i,
+        #         launch_time=float(self.missile_launch_times[i]),
+        #         launch_position=self.missile_launch_positions[i].copy(),
+        #     )
+        #     self.red_aircraft.append(
+        #         CarrierAircraft(
+        #             position=self.missile_launch_positions[i].copy(),
+        #             missiles=[binding],
+        #         )
+        #     )
+        # 导弹发射位置由战机决定的设置。
+        red_heading = math.radians(float(self.cfg.red_heading_deg))
+        red_dir = np.array([math.cos(red_heading), math.sin(red_heading), 0.0], dtype=float)
+        self.red_pos = np.array(
+            [self.cfg.red_x, self.cfg.red_y, self.cfg.red_z],
+            dtype=float,
         )
-        self.missile_launch_positions = launch_pos.reshape(self.cfg.num_missiles, 3)
+        self.red_vel = red_dir * self.cfg.red_speed
+        self.red_distance_traveled = 0.0
+        self.red_flight_model.reset()
+
+        self.missile_launch_positions = np.tile(self.red_pos, (self.cfg.num_missiles, 1))
         self.missile_pos = self.missile_launch_positions.copy()
-        self.missile_pos = launch_pos.reshape(self.cfg.num_missiles, 3)
-        self.missile_launch_times = launch_times.astype(float)
+        self.missile_launch_times = self._compute_red_launch_schedule()
         self.missile_launched[:] = False
 
         self.red_aircraft = []
         self.blue_payload = []
+        bindings: List[MissileBinding] = []
         for i in range(self.cfg.num_missiles):
             binding = MissileBinding(
                 index=i,
                 launch_time=float(self.missile_launch_times[i]),
-                launch_position=self.missile_launch_positions[i].copy(),
+                launch_position=self.red_pos.copy(),
             )
-            self.red_aircraft.append(
-                CarrierAircraft(
-                    position=self.missile_launch_positions[i].copy(),
-                    missiles=[binding],
-                )
+            bindings.append(binding)
+        self.red_aircraft.append(
+            CarrierAircraft(
+                position=self.red_pos.copy(),
+                missiles=bindings,
             )
+        )
 
         # Velocities start at zero (not yet launched)
         self.missile_vel.fill(0.0)
@@ -225,6 +260,15 @@ class EscapeEnv:
                 gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
             self.initial_nav_gains = gains.copy()
 
+    def _compute_red_launch_schedule(self) -> np.ndarray:
+        speed = float(self.cfg.red_speed)
+        if speed <= 1e-6:
+            start_time = 0.0
+        else:
+            start_time = float(self.cfg.red_launch_start_distance_km) / speed
+        intervals = np.arange(self.cfg.num_missiles, dtype=float) * float(self.cfg.min_launch_interval)
+        return start_time + intervals
+
     # ------------------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         if self.done:
@@ -239,23 +283,27 @@ class EscapeEnv:
         prev_blue_pos = self.blue_pos.copy()
         prev_blue_vel = self.blue_vel.copy()
         prev_missile_pos = self.missile_pos.copy()
+        missiles_present = bool(np.any(self.missile_launched))
 
         # 1) Update blue aircraft
-        threat_pre = self._compute_threat()
-        if threat_pre >= self.cfg.threat_maneuver_start:
-            self.threat_mode = False
-        elif threat_pre <= self.cfg.threat_maneuver_stop:
-            self.threat_mode = False
+        if missiles_present:
+            threat_pre = self._compute_threat()
+            if threat_pre >= self.cfg.threat_maneuver_start:
+                self.threat_mode = False
+            elif threat_pre <= self.cfg.threat_maneuver_stop:
+                self.threat_mode = False
 
-        if self.threat_mode and not self.blue_model.has_forced_actions():
-            self._schedule_evasive_maneuver(threat_pre)
-        self.blue_pos, self.blue_vel = self.blue_model.step(
-            self.blue_pos,
-            self.blue_vel,
-            action,
-        )
-        if self.forced_maneuver_steps > 0:
-            self.forced_maneuver_steps -= 1
+            if self.threat_mode and not self.blue_model.has_forced_actions():
+                self._schedule_evasive_maneuver(threat_pre)
+            self.blue_pos, self.blue_vel = self.blue_model.step(
+                self.blue_pos,
+                self.blue_vel,
+                action,
+            )
+            if self.forced_maneuver_steps > 0:
+                self.forced_maneuver_steps -= 1
+        else:
+            self.blue_pos = self.blue_pos + self.blue_vel * dt
 
         # Enforce ground (terrain) for blue
         crashed = False
@@ -269,12 +317,19 @@ class EscapeEnv:
         if self.log_enabled and self._blue_action_log is not None:
             self._blue_action_log.append([float(self.time), int(action)])
 
+        prev_red_pos = self.red_pos.copy()
+        self.red_pos, self.red_vel = self.red_flight_model.step(self.red_pos, self.red_vel)
+        self.red_distance_traveled += float(np.linalg.norm(self.red_pos - prev_red_pos))
+        if self.red_aircraft:
+            self.red_aircraft[0].position = self.red_pos.copy()
+
         for i in range(self.cfg.num_missiles):
             if (
                 (not self.missile_launched[i])
                 and self.missile_alive[i]
                 and self.time >= self.missile_launch_times[i]
             ):
+                self.missile_launch_positions[i] = self.red_pos.copy()
                 self.missile_pos[i] = self.missile_launch_positions[i].copy()
                 # Launch missile i: set initial velocity toward current blue position
                 direction = self.blue_pos - self.missile_pos[i]

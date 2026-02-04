@@ -33,6 +33,26 @@ class CarrierAircraft:
     position: np.ndarray
     missiles: List[MissileBinding]
 
+class RedFlightModel:
+    """Interface for red aircraft flight dynamics."""
+
+    def reset(self) -> None:
+        return None
+
+    def step(self, pos: np.ndarray, vel: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError
+
+
+class StraightLineRedFlight(RedFlightModel):
+    """Straight-line red aircraft flight model (constant velocity)."""
+
+    def __init__(self, dt: float) -> None:
+        self.dt = float(dt)
+
+    def step(self, pos: np.ndarray, vel: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        pos = pos.astype(float) + vel.astype(float) * self.dt
+        return pos, vel
+
 class Aircraft:
     """Blue aircraft model (evasive target)."""
 
