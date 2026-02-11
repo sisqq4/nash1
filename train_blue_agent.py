@@ -90,13 +90,46 @@ def load_checkpoint(
         env.set_red_params(payload["red"])
     return payload
 
-def train() -> None:
+
+def apply_fixed_scenario(env: EscapeEnv, distance_km: float) -> np.ndarray:
+    """Apply fixed blue/missile initialization for the current episode and return updated observation."""
+    env.blue_pos = np.array([distance_km, 0.0, 10.0], dtype=float)
+    env.blue_vel = np.array([-env.cfg.blue_max_speed, 0.0, 0.0], dtype=float)
+
+    env.missile_pos[0] = np.array([0.0, 0.0, 10.0], dtype=float)
+    env.missile_launch_times[0] = 0.0
+
+    env.initial_missile_distances = np.linalg.norm(
+        env.missile_pos - env.blue_pos[None, :],
+        axis=1,
+    )
+    env.prev_min_dist = float(np.min(env.initial_missile_distances))
+    env.prev_blue_vel = env.blue_vel.copy()
+
+    if env.log_enabled:
+        env._init_logging()
+        env._log_current_state()
+
+    return env._get_obs()
+
+
+def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
     env_cfg.reward_mode = train_cfg.reward_mode
 
-    run_id = time.strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(env_cfg.save_dir, run_id)
+    env_cfg.num_missiles = 1
+    env_cfg.blue_x_min = float(distance_km)
+    env_cfg.blue_x_max = float(distance_km)
+    env_cfg.blue_y_min = 0.0
+    env_cfg.blue_y_max = 0.0
+    env_cfg.blue_z_min = 10.0
+    env_cfg.blue_z_max = 10.0
+    env_cfg.blue_heading_min = 180.0
+    env_cfg.blue_heading_max = 180.0
+
+    round_name = f"distance_{distance_km:02d}km"
+    run_dir = os.path.join(root_run_dir, round_name)
     env_cfg.save_dir = run_dir
     train_cfg.checkpoint_dir = os.path.join(run_dir, "checkpoints")
     train_cfg.results_dir = os.path.join(run_dir, "results")
@@ -105,7 +138,13 @@ def train() -> None:
     config_path = os.path.join(run_dir, "config.json")
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(
-            {"env": asdict(env_cfg), "train": asdict(train_cfg)},
+            {
+                "run_id": run_id,
+                "round_name": round_name,
+                "distance_km": distance_km,
+                "env": asdict(env_cfg),
+                "train": asdict(train_cfg),
+            },
             f,
             indent=2,
             ensure_ascii=False,
@@ -133,7 +172,6 @@ def train() -> None:
     success_count = 0
     episode_losses: List[float] = []
     win_flags: List[int] = []
-    # start_time = time.time()
     per_episode_rows: List[Dict[str, Any]] = []
     convergence_points: List[Dict[str, float]] = []
 
@@ -142,7 +180,8 @@ def train() -> None:
     for ep in range(1, train_cfg.episodes + 1):
         start_time = time.time()
         step = 0
-        obs = env.reset()
+        env.reset()
+        obs = apply_fixed_scenario(env, float(distance_km))
         done = False
         ep_reward = 0.0
         episode_info = None
@@ -208,9 +247,9 @@ def train() -> None:
         if ep % train_cfg.print_interval == 0:
             avg_reward = sum(episode_rewards[-train_cfg.print_interval :]) / train_cfg.print_interval
             elapsed = time.time() - start_time
-            # success_rate = success_count / ep if ep > 0 else 0.0
             success_rate = cumulative_success_rate
             print(
+                f"[distance={distance_km:02d}km] "
                 f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
                 f"success = {success_count}/{ep} ({success_rate * 100:5.1f}%) | "
                 f"R_ma100 = {reward_ma100:7.3f} | R_cv100 = {reward_cv100:6.3f} | "
@@ -228,7 +267,6 @@ def train() -> None:
                     "win_rate100": win_rate100,
                 }
             )
-
 
         if train_cfg.checkpoint_interval > 0 and ep % train_cfg.checkpoint_interval == 0:
             ckpt_name = f"checkpoint_ep{ep:04d}.pt"
@@ -255,11 +293,11 @@ def train() -> None:
                     explode_time=10,
                     add_plane_explosion=add_plane_explosion,
                 )
-                print(f"[ACMI] Episode {ep}: wrote {target_name}.acmi from {csv_dir}")
+                print(f"[ACMI][distance={distance_km:02d}km] Episode {ep}: wrote {target_name}.acmi from {csv_dir}")
             else:
-                print(f"[ACMI] Episode {ep}: csv dir {csv_dir} not found, skip.")
+                print(f"[ACMI][distance={distance_km:02d}km] Episode {ep}: csv dir {csv_dir} not found, skip.")
 
-    print("Training finished.")
+    print(f"Training finished for distance={distance_km:02d}km.")
 
     if convergence_points:
         curve_df = pd.DataFrame(convergence_points)
@@ -294,24 +332,18 @@ def train() -> None:
         indicator_csv_path = os.path.join(train_cfg.results_dir, "convergence_indicators.csv")
         curve_df.to_csv(indicator_csv_path, index=False)
 
-    # if success_rate_points:
-    #     x_vals, y_vals = zip(*success_rate_points)
-    #     plt.figure(figsize=(8, 4.5))
-    #     plt.plot(x_vals, y_vals, marker="o")
-    #     plt.title("Success Rate (Every 10 Episodes)")
-    #     plt.xlabel("Episode")
-    #     plt.ylabel("Success Rate")
-    #     plt.ylim(0.0, 1.0)
-    #     plt.grid(True, linestyle="--", alpha=0.5)
-    #     plot_path = os.path.join(train_cfg.results_dir, "success_rate_curve.png")
-    #     plt.tight_layout()
-    #     plt.savefig(plot_path, dpi=150)
-    #     plt.close()
-
     if per_episode_rows:
         df = pd.DataFrame(per_episode_rows)
         excel_path = os.path.join(train_cfg.results_dir, "episode_summary.csv")
         df.to_csv(excel_path, index=False)
+
+def train() -> None:
+    run_id = time.strftime("%Y%m%d_%H%M%S")
+    root_run_dir = os.path.join(EnvConfig().save_dir, run_id)
+    os.makedirs(root_run_dir, exist_ok=True)
+
+    for distance_km in range(5, 51):
+        train_for_distance(distance_km=distance_km, root_run_dir=root_run_dir, run_id=run_id)
 
 
 if __name__ == "__main__":
