@@ -23,6 +23,18 @@ from env.acmi_io import write_acmi
 from agent.dqn_agent import DQNAgent, DQNConfig
 
 
+def rolling_mean(values: List[float], window: int) -> float:
+    if not values:
+        return 0.0
+    w = min(window, len(values))
+    return float(np.mean(values[-w:]))
+
+
+def rolling_std(values: List[float], window: int) -> float:
+    if not values:
+        return 0.0
+    w = min(window, len(values))
+    return float(np.std(values[-w:]))
 
 def make_env_and_agent(
     env_cfg: EnvConfig,
@@ -119,9 +131,11 @@ def train() -> None:
     episode_rewards = []
     global_step = 0
     success_count = 0
+    episode_losses: List[float] = []
+    win_flags: List[int] = []
     # start_time = time.time()
     per_episode_rows: List[Dict[str, Any]] = []
-    success_rate_points: List[Tuple[int, float]] = []
+    convergence_points: List[Dict[str, float]] = []
 
     os.makedirs(train_cfg.results_dir, exist_ok=True)
 
@@ -132,6 +146,7 @@ def train() -> None:
         done = False
         ep_reward = 0.0
         episode_info = None
+        loss_values = []
 
         while not done:
             action = agent.select_action(obs, eval_mode=False)
@@ -139,7 +154,9 @@ def train() -> None:
             episode_info = info
 
             agent.store_transition(obs, action, reward, next_obs, done)
-            _ = agent.update()
+            loss = agent.update()
+            if loss is not None:
+                loss_values.append(loss)
 
             obs = next_obs
             ep_reward += reward
@@ -160,12 +177,31 @@ def train() -> None:
                 episode_success = True
 
         cumulative_success_rate = success_count / ep if ep > 0 else 0.0
+        mean_loss = float(np.mean(loss_values)) if loss_values else np.nan
+        episode_losses.append(mean_loss)
+        win_flags.append(int(episode_success))
+
+        reward_ma100 = rolling_mean(episode_rewards, window=100)
+        reward_std100 = rolling_std(episode_rewards, window=100)
+        reward_cv100 = reward_std100 / (abs(reward_ma100) + 1e-6)
+        loss_ma100 = rolling_mean(
+            [x for x in episode_losses if np.isfinite(x)],
+            window=100,
+        )
+        win_rate100 = rolling_mean(win_flags, window=100)
         per_episode_rows.append(
             {
                 "episode": ep,
                 "steps": episode_steps,
                 "win": int(episode_success),
+                "episode_reward": ep_reward,
+                "episode_mean_loss": mean_loss,
                 "cumulative_success_rate": cumulative_success_rate,
+                "reward_ma100": reward_ma100,
+                "reward_std100": reward_std100,
+                "reward_cv100": reward_cv100,
+                "loss_ma100": loss_ma100,
+                "win_rate100": win_rate100,
             }
         )
 
@@ -177,11 +213,22 @@ def train() -> None:
             print(
                 f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
                 f"success = {success_count}/{ep} ({success_rate * 100:5.1f}%) | "
+                f"R_ma100 = {reward_ma100:7.3f} | R_cv100 = {reward_cv100:6.3f} | "
+                f"L_ma100 = {loss_ma100:8.5f} | WinRate100 = {win_rate100 * 100:5.1f}% | "
                 f"steps = {step:6d} | elapsed = {elapsed:6.1f}s"
             )
 
         if ep % 10 == 0:
-            success_rate_points.append((ep, cumulative_success_rate))
+            convergence_points.append(
+                {
+                    "episode": ep,
+                    "cumulative_success_rate": cumulative_success_rate,
+                    "reward_ma100": reward_ma100,
+                    "loss_ma100": loss_ma100,
+                    "win_rate100": win_rate100,
+                }
+            )
+
 
         if train_cfg.checkpoint_interval > 0 and ep % train_cfg.checkpoint_interval == 0:
             ckpt_name = f"checkpoint_ep{ep:04d}.pt"
@@ -214,19 +261,52 @@ def train() -> None:
 
     print("Training finished.")
 
-    if success_rate_points:
-        x_vals, y_vals = zip(*success_rate_points)
-        plt.figure(figsize=(8, 4.5))
-        plt.plot(x_vals, y_vals, marker="o")
-        plt.title("Success Rate (Every 10 Episodes)")
-        plt.xlabel("Episode")
-        plt.ylabel("Success Rate")
-        plt.ylim(0.0, 1.0)
-        plt.grid(True, linestyle="--", alpha=0.5)
-        plot_path = os.path.join(train_cfg.results_dir, "success_rate_curve.png")
-        plt.tight_layout()
-        plt.savefig(plot_path, dpi=150)
-        plt.close()
+    if convergence_points:
+        curve_df = pd.DataFrame(convergence_points)
+        x_vals = curve_df["episode"]
+
+        fig, axes = plt.subplots(3, 1, figsize=(9, 10), sharex=True)
+
+        axes[0].plot(x_vals, curve_df["cumulative_success_rate"], marker="o", label="Cumulative Success")
+        axes[0].plot(x_vals, curve_df["win_rate100"], marker="s", label="WinRate100")
+        axes[0].set_ylabel("Success Rate")
+        axes[0].set_ylim(0.0, 1.0)
+        axes[0].grid(True, linestyle="--", alpha=0.5)
+        axes[0].legend(loc="lower right")
+
+        axes[1].plot(x_vals, curve_df["reward_ma100"], color="tab:green", label="Reward MA100")
+        axes[1].set_ylabel("Reward")
+        axes[1].grid(True, linestyle="--", alpha=0.5)
+        axes[1].legend(loc="best")
+
+        axes[2].plot(x_vals, curve_df["loss_ma100"], color="tab:red", label="Loss MA100")
+        axes[2].set_ylabel("Loss")
+        axes[2].set_xlabel("Episode")
+        axes[2].grid(True, linestyle="--", alpha=0.5)
+        axes[2].legend(loc="best")
+
+        fig.suptitle("Blue Agent Convergence Indicators")
+        plot_path = os.path.join(train_cfg.results_dir, "convergence_indicators.png")
+        fig.tight_layout(rect=(0, 0, 1, 0.98))
+        fig.savefig(plot_path, dpi=150)
+        plt.close(fig)
+
+        indicator_csv_path = os.path.join(train_cfg.results_dir, "convergence_indicators.csv")
+        curve_df.to_csv(indicator_csv_path, index=False)
+
+    # if success_rate_points:
+    #     x_vals, y_vals = zip(*success_rate_points)
+    #     plt.figure(figsize=(8, 4.5))
+    #     plt.plot(x_vals, y_vals, marker="o")
+    #     plt.title("Success Rate (Every 10 Episodes)")
+    #     plt.xlabel("Episode")
+    #     plt.ylabel("Success Rate")
+    #     plt.ylim(0.0, 1.0)
+    #     plt.grid(True, linestyle="--", alpha=0.5)
+    #     plot_path = os.path.join(train_cfg.results_dir, "success_rate_curve.png")
+    #     plt.tight_layout()
+    #     plt.savefig(plot_path, dpi=150)
+    #     plt.close()
 
     if per_episode_rows:
         df = pd.DataFrame(per_episode_rows)
