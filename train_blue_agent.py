@@ -1,26 +1,20 @@
-
-"""Training script for the blue escape agent."""
+"""Simulation script using behavior-tree policy for blue aircraft."""
 
 from __future__ import annotations
 
+import json
 import os
 import time
-import json
 from dataclasses import asdict
-from typing import Tuple, Any, Dict, List
+from typing import Any, Dict, List
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
 
+from agent.blue_bt_agent import BlueBTAgent, MissileSnapshot, PlaneSnapshot
 from config import EnvConfig, TrainConfig
-from env.escape_env import EscapeEnv
 from env.acmi_io import write_acmi
-from agent.dqn_agent import DQNAgent, DQNConfig
+from env.escape_env import EscapeEnv
 
 
 def rolling_mean(values: List[float], window: int) -> float:
@@ -28,67 +22,6 @@ def rolling_mean(values: List[float], window: int) -> float:
         return 0.0
     w = min(window, len(values))
     return float(np.mean(values[-w:]))
-
-
-def rolling_std(values: List[float], window: int) -> float:
-    if not values:
-        return 0.0
-    w = min(window, len(values))
-    return float(np.std(values[-w:]))
-
-def make_env_and_agent(
-    env_cfg: EnvConfig,
-    train_cfg: TrainConfig,
-    seed: int = 0,
-) -> Tuple[EscapeEnv, DQNAgent]:
-    env = EscapeEnv(env_cfg, seed=seed)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dqn_cfg = DQNConfig(
-        obs_dim=env.observation_dim,
-        action_dim=env.action_dim,
-        lr=train_cfg.lr,
-        gamma=train_cfg.gamma,
-        batch_size=train_cfg.batch_size,
-        replay_size=train_cfg.replay_size,
-        start_learning=train_cfg.start_learning,
-        epsilon_start=train_cfg.epsilon_start,
-        epsilon_end=train_cfg.epsilon_end,
-        epsilon_decay=train_cfg.epsilon_decay,
-        target_update_interval=train_cfg.target_update_interval,
-        device=device,
-    )
-    agent = DQNAgent(dqn_cfg)
-    return env, agent
-
-
-def save_checkpoint(
-    path: str,
-    episode: int,
-    agent: DQNAgent,
-    env: EscapeEnv,
-) -> None:
-    payload: Dict[str, Any] = {
-        "episode": episode,
-        "blue": agent.get_state(),
-        "red": env.get_red_params(),
-    }
-    torch.save(payload, path)
-
-
-def load_checkpoint(
-    path: str,
-    agent: DQNAgent,
-    env: EscapeEnv,
-    load_blue: bool = True,
-    load_red: bool = True,
-) -> Dict[str, Any]:
-    payload = torch.load(path, map_location=agent.device)
-    if load_blue and "blue" in payload:
-        agent.load_state(payload["blue"])
-    if load_red and "red" in payload:
-        env.set_red_params(payload["red"])
-    return payload
 
 
 def apply_fixed_scenario(env: EscapeEnv, distance_km: float) -> np.ndarray:
@@ -113,6 +46,28 @@ def apply_fixed_scenario(env: EscapeEnv, distance_km: float) -> np.ndarray:
     return env._get_obs()
 
 
+def _build_plane_snapshot(env: EscapeEnv) -> PlaneSnapshot:
+    roll = env.blue_model.roll_rad
+    return PlaneSnapshot(
+        pos=env.blue_pos.copy(),
+        vel=env.blue_vel.copy(),
+        roll_rad=0.0 if roll is None else float(roll),
+    )
+
+
+def _build_missile_snapshots(env: EscapeEnv) -> List[MissileSnapshot]:
+    snapshots: List[MissileSnapshot] = []
+    for i in range(env.cfg.num_missiles):
+        snapshots.append(
+            MissileSnapshot(
+                pos=env.missile_pos[i].copy(),
+                team=1,
+                is_active=bool(env.missile_alive[i] and env.missile_launched[i]),
+            )
+        )
+    return snapshots
+
+
 def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
@@ -131,12 +86,10 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
     round_name = f"distance_{distance_km:02d}km"
     run_dir = os.path.join(root_run_dir, round_name)
     env_cfg.save_dir = run_dir
-    train_cfg.checkpoint_dir = os.path.join(run_dir, "checkpoints")
     train_cfg.results_dir = os.path.join(run_dir, "results")
 
     os.makedirs(run_dir, exist_ok=True)
-    config_path = os.path.join(run_dir, "config.json")
-    with open(config_path, "w", encoding="utf-8") as f:
+    with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(
             {
                 "run_id": run_id,
@@ -144,147 +97,80 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
                 "distance_km": distance_km,
                 "env": asdict(env_cfg),
                 "train": asdict(train_cfg),
+                "policy": "BlueBTAgent",
             },
             f,
             indent=2,
             ensure_ascii=False,
         )
 
-    if env_cfg.log_trajectories:
-        os.makedirs(env_cfg.save_dir, exist_ok=True)
-
-    env, agent = make_env_and_agent(env_cfg, train_cfg, seed=0)
-
-    if train_cfg.load_checkpoint_path:
-        load_checkpoint(
-            train_cfg.load_checkpoint_path,
-            agent,
-            env,
-            load_blue=train_cfg.load_blue,
-            load_red=train_cfg.load_red,
-        )
-
-    if train_cfg.checkpoint_interval > 0:
-        os.makedirs(train_cfg.checkpoint_dir, exist_ok=True)
-
-    episode_rewards = []
-    global_step = 0
-    success_count = 0
-    episode_losses: List[float] = []
-    win_flags: List[int] = []
-    per_episode_rows: List[Dict[str, Any]] = []
-    convergence_points: List[Dict[str, float]] = []
-
     os.makedirs(train_cfg.results_dir, exist_ok=True)
+    env = EscapeEnv(env_cfg, seed=0)
+    bt_agent = BlueBTAgent(uid="blue_bt", team=0)
+
+    success_count = 0
+    rewards: List[float] = []
+    win_flags: List[int] = []
+    rows: List[Dict[str, Any]] = []
 
     for ep in range(1, train_cfg.episodes + 1):
-        start_time = time.time()
-        step = 0
+        start = time.time()
         env.reset()
         obs = apply_fixed_scenario(env, float(distance_km))
+        bt_agent.reset(obs)
         done = False
         ep_reward = 0.0
-        episode_info = None
-        loss_values = []
+        episode_info: Dict[str, Any] | None = None
 
         while not done:
-            action = agent.select_action(obs, eval_mode=False)
-            next_obs, reward, done, info = env.step(action)
+            plane = _build_plane_snapshot(env)
+            missiles = _build_missile_snapshots(env)
+            action = bt_agent.get_action(plane, missiles, enemies=[])
+            _, reward, done, info = env.step(action)
             episode_info = info
-
-            agent.store_transition(obs, action, reward, next_obs, done)
-            loss = agent.update()
-            if loss is not None:
-                loss_values.append(loss)
-
-            obs = next_obs
             ep_reward += reward
-            global_step += 1
-            step += 1
 
-        episode_rewards.append(ep_reward)
-        # Determine whether this episode is a successful escape (blue survives until timeout).
-        episode_steps = env.step_count
-        episode_success = False
-        if episode_info is not None:
-            is_timeout = bool(episode_info.get("timeout", False))
-            is_hit = bool(episode_info.get("hit", False))
-            crashed = bool(episode_info.get("crashed", False))
-            missiles_exhausted = bool(episode_info.get("missiles_exhausted", False))
-            if is_timeout or missiles_exhausted and (not is_hit) and (not crashed):
-                success_count += 1
-                episode_success = True
+        rewards.append(ep_reward)
 
-        cumulative_success_rate = success_count / ep if ep > 0 else 0.0
-        mean_loss = float(np.mean(loss_values)) if loss_values else np.nan
-        episode_losses.append(mean_loss)
+        is_timeout = bool((episode_info or {}).get("timeout", False))
+        is_hit = bool((episode_info or {}).get("hit", False))
+        crashed = bool((episode_info or {}).get("crashed", False))
+        missiles_exhausted = bool((episode_info or {}).get("missiles_exhausted", False))
+        episode_success = (is_timeout or missiles_exhausted) and (not is_hit) and (not crashed)
+        if episode_success:
+            success_count += 1
+
         win_flags.append(int(episode_success))
-
-        reward_ma100 = rolling_mean(episode_rewards, window=100)
-        reward_std100 = rolling_std(episode_rewards, window=100)
-        reward_cv100 = reward_std100 / (abs(reward_ma100) + 1e-6)
-        loss_ma100 = rolling_mean(
-            [x for x in episode_losses if np.isfinite(x)],
-            window=100,
-        )
+        cumulative_success_rate = success_count / ep
+        reward_ma100 = rolling_mean(rewards, window=100)
         win_rate100 = rolling_mean(win_flags, window=100)
-        per_episode_rows.append(
+
+        rows.append(
             {
                 "episode": ep,
-                "steps": episode_steps,
+                "steps": env.step_count,
                 "win": int(episode_success),
                 "episode_reward": ep_reward,
-                "episode_mean_loss": mean_loss,
                 "cumulative_success_rate": cumulative_success_rate,
                 "reward_ma100": reward_ma100,
-                "reward_std100": reward_std100,
-                "reward_cv100": reward_cv100,
-                "loss_ma100": loss_ma100,
                 "win_rate100": win_rate100,
             }
         )
 
         if ep % train_cfg.print_interval == 0:
-            avg_reward = sum(episode_rewards[-train_cfg.print_interval :]) / train_cfg.print_interval
-            elapsed = time.time() - start_time
-            success_rate = cumulative_success_rate
+            avg_reward = float(np.mean(rewards[-train_cfg.print_interval :]))
             print(
-                f"[distance={distance_km:02d}km] "
-                f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
-                f"success = {success_count}/{ep} ({success_rate * 100:5.1f}%) | "
-                f"R_ma100 = {reward_ma100:7.3f} | R_cv100 = {reward_cv100:6.3f} | "
-                f"L_ma100 = {loss_ma100:8.5f} | WinRate100 = {win_rate100 * 100:5.1f}% | "
-                f"steps = {step:6d} | elapsed = {elapsed:6.1f}s"
+                f"[distance={distance_km:02d}km] Episode {ep:4d} | "
+                f"avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
+                f"success = {success_count}/{ep} ({cumulative_success_rate * 100:5.1f}%) | "
+                f"R_ma100 = {reward_ma100:7.3f} | WinRate100 = {win_rate100 * 100:5.1f}% | "
+                f"elapsed = {time.time() - start:6.1f}s"
             )
 
-        if ep % 10 == 0:
-            convergence_points.append(
-                {
-                    "episode": ep,
-                    "cumulative_success_rate": cumulative_success_rate,
-                    "reward_ma100": reward_ma100,
-                    "loss_ma100": loss_ma100,
-                    "win_rate100": win_rate100,
-                }
-            )
-
-        if train_cfg.checkpoint_interval > 0 and ep % train_cfg.checkpoint_interval == 0:
-            ckpt_name = f"checkpoint_ep{ep:04d}.pt"
-            ckpt_path = os.path.join(train_cfg.checkpoint_dir, ckpt_name)
-            save_checkpoint(ckpt_path, ep, agent, env)
-
-        # Every 10 episodes, convert this episode to a Tacview ACMI
-        if env_cfg.log_trajectories and ep % 10 == 0:
+        if env_cfg.log_trajectories:
             csv_dir = os.path.join(env_cfg.save_dir, "csv", str(ep))
             if os.path.isdir(csv_dir):
-                add_plane_explosion = True
-                if episode_info is not None:
-                    is_timeout = bool(episode_info.get("timeout", False))
-                    is_hit = bool(episode_info.get("hit", False))
-                    crashed = bool(episode_info.get("crashed", False))
-                    missiles_exhausted = bool(episode_info.get("missiles_exhausted", False))
-                    if (is_timeout or missiles_exhausted) and (not is_hit) and (not crashed):
-                        add_plane_explosion = False
+                add_plane_explosion = not episode_success
                 target_name = f"session_ep{ep:04d}"
                 write_acmi(
                     target_name=target_name,
@@ -293,49 +179,13 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
                     explode_time=10,
                     add_plane_explosion=add_plane_explosion,
                 )
-                print(f"[ACMI][distance={distance_km:02d}km] Episode {ep}: wrote {target_name}.acmi from {csv_dir}")
-            else:
-                print(f"[ACMI][distance={distance_km:02d}km] Episode {ep}: csv dir {csv_dir} not found, skip.")
 
-    print(f"Training finished for distance={distance_km:02d}km.")
+    print(f"Simulation finished for distance={distance_km:02d}km.")
 
-    if convergence_points:
-        curve_df = pd.DataFrame(convergence_points)
-        x_vals = curve_df["episode"]
+    if rows:
+        result_df = pd.DataFrame(rows)
+        result_df.to_csv(os.path.join(train_cfg.results_dir, "episode_summary.csv"), index=False)
 
-        fig, axes = plt.subplots(3, 1, figsize=(9, 10), sharex=True)
-
-        axes[0].plot(x_vals, curve_df["cumulative_success_rate"], marker="o", label="Cumulative Success")
-        axes[0].plot(x_vals, curve_df["win_rate100"], marker="s", label="WinRate100")
-        axes[0].set_ylabel("Success Rate")
-        axes[0].set_ylim(0.0, 1.0)
-        axes[0].grid(True, linestyle="--", alpha=0.5)
-        axes[0].legend(loc="lower right")
-
-        axes[1].plot(x_vals, curve_df["reward_ma100"], color="tab:green", label="Reward MA100")
-        axes[1].set_ylabel("Reward")
-        axes[1].grid(True, linestyle="--", alpha=0.5)
-        axes[1].legend(loc="best")
-
-        axes[2].plot(x_vals, curve_df["loss_ma100"], color="tab:red", label="Loss MA100")
-        axes[2].set_ylabel("Loss")
-        axes[2].set_xlabel("Episode")
-        axes[2].grid(True, linestyle="--", alpha=0.5)
-        axes[2].legend(loc="best")
-
-        fig.suptitle("Blue Agent Convergence Indicators")
-        plot_path = os.path.join(train_cfg.results_dir, "convergence_indicators.png")
-        fig.tight_layout(rect=(0, 0, 1, 0.98))
-        fig.savefig(plot_path, dpi=150)
-        plt.close(fig)
-
-        indicator_csv_path = os.path.join(train_cfg.results_dir, "convergence_indicators.csv")
-        curve_df.to_csv(indicator_csv_path, index=False)
-
-    if per_episode_rows:
-        df = pd.DataFrame(per_episode_rows)
-        excel_path = os.path.join(train_cfg.results_dir, "episode_summary.csv")
-        df.to_csv(excel_path, index=False)
 
 def train() -> None:
     run_id = time.strftime("%Y%m%d_%H%M%S")
