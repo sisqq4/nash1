@@ -91,12 +91,21 @@ def load_checkpoint(
     return payload
 
 
-def apply_fixed_scenario(env: EscapeEnv, distance_km: float) -> np.ndarray:
+def apply_fixed_scenario(
+    env: EscapeEnv,
+    distance_km: float,
+    height_delta_km: float,
+    init_heading_deg: float,
+) -> np.ndarray:
     """Apply fixed blue/missile initialization for the current episode and return updated observation."""
-    env.blue_pos = np.array([distance_km, 0.0, 10.0], dtype=float)
-    env.blue_vel = np.array([-env.cfg.blue_max_speed, 0.0, 0.0], dtype=float)
+    red_pos = np.array([0.0, 0.0, 10.0], dtype=float)
+    heading_rad = np.deg2rad(init_heading_deg)
+    heading_dir = np.array([np.cos(heading_rad), np.sin(heading_rad), 0.0], dtype=float)
 
-    env.missile_pos[0] = np.array([0.0, 0.0, 10.0], dtype=float)
+    env.blue_pos = red_pos + np.array([distance_km, 0.0, height_delta_km], dtype=float)
+    env.blue_vel = heading_dir * env.cfg.blue_max_speed
+
+    env.missile_pos[0] = red_pos
     env.missile_launch_times[0] = 0.0
 
     env.initial_missile_distances = np.linalg.norm(
@@ -113,7 +122,13 @@ def apply_fixed_scenario(env: EscapeEnv, distance_km: float) -> np.ndarray:
     return env._get_obs()
 
 
-def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None:
+def train_for_scenario(
+    distance_km: int,
+    height_delta_km: int,
+    init_heading_deg: int,
+    root_run_dir: str,
+    run_id: str,
+) -> None:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
     env_cfg.reward_mode = train_cfg.reward_mode
@@ -125,10 +140,14 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
     env_cfg.blue_y_max = 0.0
     env_cfg.blue_z_min = 10.0
     env_cfg.blue_z_max = 10.0
-    env_cfg.blue_heading_min = 180.0
-    env_cfg.blue_heading_max = 180.0
+    env_cfg.blue_heading_min = float(init_heading_deg)
+    env_cfg.blue_heading_max = float(init_heading_deg)
 
-    round_name = f"distance_{distance_km:02d}km"
+    round_name = (
+        f"distance_{distance_km:02d}km_"
+        f"height_delta_{height_delta_km:+d}km_"
+        f"init_heading_{init_heading_deg:03d}deg"
+    )
     run_dir = os.path.join(root_run_dir, round_name)
     env_cfg.save_dir = run_dir
     train_cfg.checkpoint_dir = os.path.join(run_dir, "checkpoints")
@@ -142,6 +161,8 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
                 "run_id": run_id,
                 "round_name": round_name,
                 "distance_km": distance_km,
+                "height_delta_km": height_delta_km,
+                "init_heading_deg": init_heading_deg,
                 "env": asdict(env_cfg),
                 "train": asdict(train_cfg),
             },
@@ -181,7 +202,12 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
         start_time = time.time()
         step = 0
         env.reset()
-        obs = apply_fixed_scenario(env, float(distance_km))
+        obs = apply_fixed_scenario(
+            env,
+            float(distance_km),
+            float(height_delta_km),
+            float(init_heading_deg),
+        )
         done = False
         ep_reward = 0.0
         episode_info = None
@@ -250,6 +276,8 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
             success_rate = cumulative_success_rate
             print(
                 f"[distance={distance_km:02d}km] "
+                f"[height_delta={height_delta_km:+d}km] "
+                f"[init_heading={init_heading_deg:03d}deg] "
                 f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
                 f"success = {success_count}/{ep} ({success_rate * 100:5.1f}%) | "
                 f"R_ma100 = {reward_ma100:7.3f} | R_cv100 = {reward_cv100:6.3f} | "
@@ -293,11 +321,25 @@ def train_for_distance(distance_km: int, root_run_dir: str, run_id: str) -> None
                     explode_time=10,
                     add_plane_explosion=add_plane_explosion,
                 )
-                print(f"[ACMI][distance={distance_km:02d}km] Episode {ep}: wrote {target_name}.acmi from {csv_dir}")
+                print(
+                    f"[ACMI][distance={distance_km:02d}km]"
+                    f"[height_delta={height_delta_km:+d}km]"
+                    f"[init_heading={init_heading_deg:03d}deg] "
+                    f"Episode {ep}: wrote {target_name}.acmi from {csv_dir}"
+                )
             else:
-                print(f"[ACMI][distance={distance_km:02d}km] Episode {ep}: csv dir {csv_dir} not found, skip.")
+                print(
+                    f"[ACMI][distance={distance_km:02d}km]"
+                    f"[height_delta={height_delta_km:+d}km]"
+                    f"[init_heading={init_heading_deg:03d}deg] "
+                    f"Episode {ep}: csv dir {csv_dir} not found, skip."
+                )
 
-    print(f"Training finished for distance={distance_km:02d}km.")
+    print(
+                f"Training finished for distance={distance_km:02d}km, "
+                f"height_delta={height_delta_km:+d}km, "
+                f"init_heading={init_heading_deg:03d}deg."
+    )
 
     if convergence_points:
         curve_df = pd.DataFrame(convergence_points)
@@ -342,8 +384,16 @@ def train() -> None:
     root_run_dir = os.path.join(EnvConfig().save_dir, run_id)
     os.makedirs(root_run_dir, exist_ok=True)
 
-    for distance_km in range(5, 51):
-        train_for_distance(distance_km=distance_km, root_run_dir=root_run_dir, run_id=run_id)
+    for distance_km in range(10, 41):
+        for height_delta_km in range(-1, 2):
+            for init_heading_deg in range(0, 360, 90):
+                train_for_scenario(
+                    distance_km=distance_km,
+                    height_delta_km=height_delta_km,
+                    init_heading_deg=init_heading_deg,
+                    root_run_dir=root_run_dir,
+                    run_id=run_id,
+                )
 
 
 if __name__ == "__main__":

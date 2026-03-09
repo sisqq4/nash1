@@ -151,7 +151,7 @@ class EnvConfig:
 class TrainConfig:
     """Training hyperparameters for the blue RL agent."""
 
-    episodes: int = 2000
+    episodes: int = 1000
     gamma: float = 0.99
     lr: float = 1e-3
     batch_size: int = 64
