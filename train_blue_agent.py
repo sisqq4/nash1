@@ -164,23 +164,28 @@ def train() -> None:
             {
                 "episode": ep,
                 "steps": episode_steps,
+                "episode_reward": float(ep_reward),
                 "win": int(episode_success),
                 "cumulative_success_rate": cumulative_success_rate,
+                "timeout": int(bool(episode_info.get("timeout", False))) if episode_info else 0,
+                "hit": int(bool(episode_info.get("hit", False))) if episode_info else 0,
+                "crashed": int(bool(episode_info.get("crashed", False))) if episode_info else 0,
+                "missiles_exhausted": int(bool(episode_info.get("missiles_exhausted", False))) if episode_info else 0,
             }
         )
 
-        if ep % train_cfg.print_interval == 0:
-            avg_reward = sum(episode_rewards[-train_cfg.print_interval :]) / train_cfg.print_interval
-            elapsed = time.time() - start_time
-            # success_rate = success_count / ep if ep > 0 else 0.0
-            success_rate = cumulative_success_rate
-            print(
-                f"Episode {ep:4d} | avg_reward(last {train_cfg.print_interval}) = {avg_reward:6.3f} | "
-                f"success = {success_count}/{ep} ({success_rate * 100:5.1f}%) | "
-                f"steps = {step:6d} | elapsed = {elapsed:6.1f}s"
-            )
-
+        window = min(train_cfg.print_interval, len(episode_rewards))
+        avg_reward = sum(episode_rewards[-window:]) / max(window, 1)
+        elapsed = time.time() - start_time
+        success_rate = cumulative_success_rate
         if ep % 10 == 0:
+            print(
+                f"Episode 编号 - {ep}\n"
+                f"平均奖励 - 最近 {train_cfg.print_interval} 个 episode 的平均奖励: {avg_reward:.3f}\n"
+                f"成功率 - {success_count}/{ep} ({success_rate * 100:.1f}%)\n"
+                f"本回合步数 - {step}\n"
+                f"耗时 - {elapsed:.1f} 秒"
+            )
             success_rate_points.append((ep, cumulative_success_rate))
 
         if train_cfg.checkpoint_interval > 0 and ep % train_cfg.checkpoint_interval == 0:

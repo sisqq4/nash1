@@ -70,6 +70,29 @@ def write_action_csv(
         writer = csv.writer(f)
         writer.writerows(rows)
 
+def write_table_csv(
+    save_dir: str,
+    fname: str,
+    headers: List[str],
+    data: List[List[float | int | str]],
+    episode_index: int | None = None,
+) -> None:
+    """Write generic tabular data to CSV with custom headers."""
+
+    csv_root = os.path.join(save_dir, "csv")
+    if episode_index is not None:
+        csv_dir = os.path.join(csv_root, str(episode_index))
+    else:
+        csv_dir = csv_root
+
+    os.makedirs(csv_dir, exist_ok=True)
+    path = os.path.join(csv_dir, fname + ".csv")
+
+    rows = [headers] + data
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(rows)
+
 def _read_csv_no_header(path: str) -> List[List[float]]:
     rows: List[List[float]] = []
     with open(path, "r", newline="") as f:

@@ -16,11 +16,11 @@ class EnvConfig:
     region_span: float = 160.0  # km
 
     # Blue aircraft initial region (random inside this box)
-    blue_x_min: float = 40.0
-    blue_x_max: float = 50.0
+    blue_x_min: float = 10.0
+    blue_x_max: float = 30.0
     blue_y_min: float = 0.0
     blue_y_max: float = 0.0
-    blue_z_min: float = 4.0
+    blue_z_min: float = 10.0
     blue_z_max: float = 10.0
 
     # Simulation
@@ -43,7 +43,10 @@ class EnvConfig:
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
-    num_missiles: int = 3
+    num_missiles: int = 1
+    missile_spawn_x: float = 0.0
+    missile_spawn_y: float = 0.0
+    missile_spawn_z: float = 10.0
     nav_gain: float = 4.5
     missile_max_overload_g: float = 45.0  # max lateral load factor [g] (40-50g target)
     missile_cd: float = 0.28
@@ -62,7 +65,7 @@ class EnvConfig:
     missile_max_flight_time: float = 120.0   # [s]
 
     # Hit radius (warhead lethal radius, km)
-    hit_radius: float = 0.03  # ~30 m
+    hit_radius: float = 0.015  # ~15 m
 
     # Game-theoretic launcher (position + launch time)
     candidate_launch_count: int = 32

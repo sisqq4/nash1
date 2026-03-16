@@ -1,5 +1,5 @@
 
-"""3D escape environment: blue aircraft vs. three red missiles."""
+"""3D escape environment: blue aircraft vs. red missiles."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .game_theory_launcher import GameTheoreticLauncher, LaunchRegion
 from .missile_dynamics import update_blue_state, update_missiles_pn
 from .aircraft_missiles import Aircraft, Missiles
 from .diff_game_controller import DifferentialGameController
-from .acmi_io import write_csv, write_action_csv
+from .acmi_io import write_csv, write_action_csv, write_table_csv
 from . import action_space
 from .threat_eval import ThreatEvaluator, ThreatParams
 from config import EnvConfig
@@ -116,12 +116,15 @@ class EscapeEnv:
         self._missile_names: List[str] | None = None
         self._blue_action_log: List[List[float]] | None = None
         self._blue_action_name: str | None = None
-
+        self._analysis_log: List[List[float | int | str]] | None = None
+        self._analysis_name: str | None = None
+        self._last_action: int | None = None
     # ------------------------------------------------------------------
     def reset(self) -> np.ndarray:
         self.step_count = 0
         self.time = 0.0
         self.done = False
+        self._last_action = None
         self.blue_model.reset()
 
         # Blue initial position: random in box (above ground)
@@ -144,14 +147,18 @@ class EscapeEnv:
         v_dir = np.array([math.cos(heading), math.sin(heading), 0.0], dtype=float)
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
-        # Red: matrix game for launch positions + times
-        launch_pos, launch_times = self.launcher.compute_launch_plan(
+        # Red: fixed spawn position with launch timing from the game-theory planner
+        _, launch_times = self.launcher.compute_launch_plan(
             blue_initial_pos=self.blue_pos,
             blue_speed=self.cfg.blue_max_speed,
             missile_speed=self.cfg.missile_speed,
         )
-        self.missile_pos = launch_pos.reshape(self.cfg.num_missiles, 3)
-        self.missile_launch_times = launch_times.astype(float)
+        fixed_spawn = np.array(
+            [self.cfg.missile_spawn_x, self.cfg.missile_spawn_y, self.cfg.missile_spawn_z],
+            dtype=float,
+        )
+        self.missile_pos = np.repeat(fixed_spawn[None, :], self.cfg.num_missiles, axis=0)
+        self.missile_launch_times.fill(0.0)
         self.missile_launched[:] = False
 
         # Velocities start at zero (not yet launched)
@@ -217,6 +224,7 @@ class EscapeEnv:
         prev_blue_pos = self.blue_pos.copy()
         prev_blue_vel = self.blue_vel.copy()
         prev_missile_pos = self.missile_pos.copy()
+        prev_missile_vel = self.missile_vel.copy()
 
         # 1) Update blue aircraft
         threat_pre = self._compute_threat()
@@ -245,6 +253,7 @@ class EscapeEnv:
         self.step_count += 1
         self.time += dt
         if self.log_enabled and self._blue_action_log is not None:
+            self._last_action = int(action)
             self._blue_action_log.append([float(self.time), int(action)])
 
         for i in range(self.cfg.num_missiles):
@@ -401,7 +410,7 @@ class EscapeEnv:
                 self.missile_is_boosting[i] = False
 
         if self.log_enabled:
-            self._log_current_state()
+            self._log_current_state(prev_blue_vel=prev_blue_vel, prev_missile_vel=prev_missile_vel)
 
         # 9) Hit detection (line-segment / sphere)
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
@@ -841,6 +850,8 @@ class EscapeEnv:
         self._plane_track = []
         self._blue_action_log = []
         self._blue_action_name = f"plane_blue_actions.{plane_id}"
+        self._analysis_log = []
+        self._analysis_name = f"analysis_episode.{self.episode_index}"
 
     def _compute_orientation(self, vel: np.ndarray) -> Tuple[float, float, float]:
         vx, vy, vz = vel
@@ -850,9 +861,19 @@ class EscapeEnv:
         roll = 0.0
         return roll, pitch, yaw
 
-    def _log_current_state(self) -> None:
+    def _log_current_state(
+        self,
+        prev_blue_vel: np.ndarray | None = None,
+        prev_missile_vel: np.ndarray | None = None,
+    ) -> None:
         if self._plane_track is None or self._missile_tracks is None:
             return
+        if prev_blue_vel is None:
+            prev_blue_vel = self.blue_vel.copy()
+        if prev_missile_vel is None:
+            prev_missile_vel = self.missile_vel.copy()
+
+        dt = max(self.cfg.dt, 1e-9)
 
         # Plane is always visible from t=0
         roll, pitch, yaw = self._compute_orientation(self.blue_vel)
@@ -867,24 +888,84 @@ class EscapeEnv:
             ]
         )
 
+        if self._analysis_log is not None:
+            blue_acc = (self.blue_vel - prev_blue_vel) / dt
+            blue_speed = float(np.linalg.norm(self.blue_vel))
+            blue_acc_norm = float(np.linalg.norm(blue_acc))
+            self._analysis_log.append(
+                [
+                    float(self.time),
+                    int(self.step_count),
+                    "blue",
+                    0,
+                    1,
+                    1,
+                    float(self.blue_pos[0]),
+                    float(self.blue_pos[1]),
+                    float(self.blue_pos[2]),
+                    float(self.blue_vel[0]),
+                    float(self.blue_vel[1]),
+                    float(self.blue_vel[2]),
+                    blue_speed,
+                    float(blue_acc[0]),
+                    float(blue_acc[1]),
+                    float(blue_acc[2]),
+                    blue_acc_norm,
+                    0.0,
+                    float(self.prev_threat),
+                    -1 if self._last_action is None else int(self._last_action),
+                ]
+            )
+
         # Missiles are only logged *after* they have been launched,
         # so they are invisible in Tacview before launch.
         for i in range(self.cfg.num_missiles):
-            if not self.missile_launched[i]:
-                continue
+            # if not self.missile_launched[i]:
+            #     continue
             m_pos = self.missile_pos[i]
             m_vel = self.missile_vel[i]
-            roll_m, pitch_m, yaw_m = self._compute_orientation(m_vel)
-            self._missile_tracks[i].append(
-                [
-                    float(m_pos[0]),
-                    float(m_pos[1]),
-                    float(m_pos[2]),
-                    roll_m,
-                    pitch_m,
-                    yaw_m,
-                ]
-            )
+            if self.missile_launched[i]:
+                roll_m, pitch_m, yaw_m = self._compute_orientation(m_vel)
+                self._missile_tracks[i].append(
+                    [
+                        float(m_pos[0]),
+                        float(m_pos[1]),
+                        float(m_pos[2]),
+                        roll_m,
+                        pitch_m,
+                        yaw_m,
+                    ]
+                )
+
+            if self._analysis_log is not None:
+                m_acc = (m_vel - prev_missile_vel[i]) / dt
+                m_speed = float(np.linalg.norm(m_vel))
+                m_acc_norm = float(np.linalg.norm(m_acc))
+                dist_to_blue = float(np.linalg.norm(m_pos - self.blue_pos))
+                self._analysis_log.append(
+                    [
+                        float(self.time),
+                        int(self.step_count),
+                        "missile",
+                        int(i),
+                        int(self.missile_launched[i]),
+                        int(self.missile_alive[i]),
+                        float(m_pos[0]),
+                        float(m_pos[1]),
+                        float(m_pos[2]),
+                        float(m_vel[0]),
+                        float(m_vel[1]),
+                        float(m_vel[2]),
+                        m_speed,
+                        float(m_acc[0]),
+                        float(m_acc[1]),
+                        float(m_acc[2]),
+                        m_acc_norm,
+                        dist_to_blue,
+                        float(self.prev_threat),
+                        -1,
+                    ]
+                )
 
     def _flush_logs_to_csv(self) -> None:
         if (
@@ -912,9 +993,24 @@ class EscapeEnv:
                 episode_index=ep_idx,
             )
 
+        if self._analysis_log and self._analysis_name is not None:
+            write_table_csv(
+                self.cfg.save_dir,
+                self._analysis_name,
+                [
+                    "time", "step", "entity_type", "entity_id", "launched", "alive",
+                    "x", "y", "z", "vx", "vy", "vz", "speed",
+                    "ax", "ay", "az", "accel_norm", "distance_to_blue", "threat", "action",
+                ],
+                self._analysis_log,
+                episode_index=ep_idx,
+            )
+
         self._plane_track = None
         self._missile_tracks = None
         self._plane_name = None
         self._missile_names = None
         self._blue_action_log = None
         self._blue_action_name = None
+        self._analysis_log = None
+        self._analysis_name = None
