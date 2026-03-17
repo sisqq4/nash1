@@ -340,6 +340,7 @@ class EscapeEnv:
                     self.missile_pos[i],
                     self.missile_vel[i],
                     self.blue_pos,
+                    self.blue_vel,
                     nav_gains_effective[i],
                     speed,
                     dt,
@@ -700,6 +701,7 @@ class EscapeEnv:
         missile_pos: np.ndarray,
         missile_vel: np.ndarray,
         blue_pos: np.ndarray,
+        blue_vel: np.ndarray,
         nav_gain: float,
         speed_km_s: float,
         dt: float,
@@ -714,24 +716,20 @@ class EscapeEnv:
         r_norm = float(np.linalg.norm(r))
         if r_norm < 1e-6:
             return 0.0
+
+        rel_vel = blue_vel - missile_vel
         los = r / r_norm
-        los_perp = los - np.dot(los, u) * u
-        perp_norm = float(np.linalg.norm(los_perp))
-        if perp_norm < 1e-6:
+        closing_speed = -float(np.dot(rel_vel, los))
+        if closing_speed <= 0.0:
             return 0.0
-        los_perp /= perp_norm
+        los_omega = np.cross(r, rel_vel) / max(r_norm ** 2, 1e-9)
 
-        delta_u = nav_gain * los_perp * dt
+        # Standard 3D PN: a_n = N * Vc * (omega_LOS x u_m)
+        a_cmd = nav_gain * closing_speed * np.cross(los_omega, u)
+        lateral_acc_km_s2 = float(np.linalg.norm(a_cmd))
         if max_overload_g > 0.0:
-            g0_km_s2 = 9.80665 / 1000.0
-            omega_max = (max_overload_g * g0_km_s2) / max(speed, 1e-6)
-            max_delta = omega_max * dt
-            delta_norm = float(np.linalg.norm(delta_u))
-            if delta_norm > max_delta > 0.0:
-                delta_u *= max_delta / delta_norm
-
-        omega = float(np.linalg.norm(delta_u)) / max(dt, 1e-6)
-        lateral_acc_km_s2 = omega * max(speed_km_s, 0.0)
+            max_acc_km_s2 = (max_overload_g * 9.80665) / 1000.0
+            lateral_acc_km_s2 = min(lateral_acc_km_s2, max_acc_km_s2)
         return (lateral_acc_km_s2 * 1000.0) / 9.80665
 
     def _missile_drag_decel(self, altitude_km: float, speed_km_s: float, total_g: float) -> float:

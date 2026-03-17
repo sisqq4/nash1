@@ -104,7 +104,7 @@ def update_missiles_pn(
         blue_vel: (3,)
         missile_speed: scalar speed (kept constant) [km/s]
         dt: [s]
-        nav_gain: scalar or shape (M,) navigation gain(s)
+        nav_gain: scalar or shape (M,) PN navigation constant N (dimensionless)
         max_overload_g: optional max lateral load factor [g]
     """
     g0_km_s2 = 9.80665 / 1000.0
@@ -152,17 +152,21 @@ def update_missiles_pn(
         r = blue_pos[0] - p
         r_norm = np.linalg.norm(r)
         if r_norm < 1e-6:
-            los = u
-        else:
-            los = r / r_norm
+            new_pos[i] = p
+            new_vel[i] = v
+            continue
 
-        # LOS component perpendicular to velocity
-        los_perp = los - np.dot(los, u) * u
-        perp_norm = np.linalg.norm(los_perp)
+            # Relative kinematics for PN guidance.
+        rel_vel = blue_vel - v
+        los = r / r_norm
+        closing_speed = -float(np.dot(rel_vel, los))
+        los_omega = np.cross(r, rel_vel) / max(r_norm ** 2, 1e-9)
 
-        if perp_norm > 1e-6 and N_gain != 0.0:
-            los_perp /= perp_norm
-            delta_u = N_gain * los_perp * dt
+        if closing_speed > 0.0 and N_gain != 0.0:
+            # Standard 3D PN command: a_n = N * Vc * (omega_LOS x u_m)
+            a_cmd = N_gain * closing_speed * np.cross(los_omega, u)
+            u_dot = a_cmd / max(speed, 1e-6)
+            delta_u = u_dot * dt
             if max_g is not None and max_g > 0.0 and speed > 1e-6:
                 omega_max = (max_g * g0_km_s2) / speed
                 max_delta = omega_max * dt
