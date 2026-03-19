@@ -26,6 +26,12 @@ class EscapeEnv:
         region = LaunchRegion(
             num_missiles=cfg.num_missiles,
             candidate_launch_count=cfg.candidate_launch_count,
+            x_min=cfg.red_launch_x_min,
+            x_max=cfg.red_launch_x_max,
+            y_min=cfg.red_launch_y_min,
+            y_max=cfg.red_launch_y_max,
+            z_min=cfg.red_launch_z_min,
+            z_max=cfg.red_launch_z_max,
             num_blue_strategies=cfg.num_blue_strategies,
             fictitious_iters=cfg.fictitious_iters,
             blue_escape_distance=cfg.blue_escape_distance,
@@ -148,17 +154,14 @@ class EscapeEnv:
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
         # Red: fixed spawn position with launch timing from the game-theory planner
-        _, launch_times = self.launcher.compute_launch_plan(
+        # Red: launch positions and launch timing from the game-theory planner
+        launch_positions, launch_times = self.launcher.compute_launch_plan(
             blue_initial_pos=self.blue_pos,
             blue_speed=self.cfg.blue_max_speed,
             missile_speed=self.cfg.missile_speed,
         )
-        fixed_spawn = np.array(
-            [self.cfg.missile_spawn_x, self.cfg.missile_spawn_y, self.cfg.missile_spawn_z],
-            dtype=float,
-        )
-        self.missile_pos = np.repeat(fixed_spawn[None, :], self.cfg.num_missiles, axis=0)
-        self.missile_launch_times.fill(0.0)
+        self.missile_pos = launch_positions.astype(float).copy()
+        self.missile_launch_times = launch_times.astype(float).copy()
         self.missile_launched[:] = False
 
         # Velocities start at zero (not yet launched)

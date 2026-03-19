@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from config import EnvConfig, TrainConfig
-from train_blue_agent import make_env_and_agent, load_checkpoint
 from env.acmi_io import write_acmi
 
-def _is_success(info: Dict[str, Any] | None) -> bool:
+def _is_success(info: Optional[Dict[str, Any]]) -> bool:
     if not info:
         return False
     is_hit = bool(info.get("hit", False))
@@ -26,13 +26,47 @@ def _apply_config(obj: Any, cfg: Dict[str, Any]) -> None:
             setattr(obj, key, value)
 
 
-def _load_run_config(checkpoint_path: str) -> Dict[str, Any] | None:
-    run_dir = os.path.abspath(os.path.join(os.path.dirname(checkpoint_path), os.pardir))
-    config_path = os.path.join(run_dir, "config.json")
-    if not os.path.isfile(config_path):
+def _load_run_config(checkpoint_path: str) -> Optional[Dict[str, Any]]:
+    run_dir = Path(checkpoint_path).resolve().parent.parent
+    config_path = run_dir / "config.json"
+    if not config_path.is_file():
         return None
-    with open(config_path, "r", encoding="utf-8") as f:
+    with config_path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _default_outputs_dir() -> Path:
+    return Path(EnvConfig().save_dir)
+
+
+def _resolve_checkpoint_path(
+    checkpoint: Optional[str],
+    run_id: Optional[str],
+    episode: Optional[int],
+    checkpoint_name: Optional[str],
+) -> str:
+    if checkpoint:
+        checkpoint_path = Path(checkpoint)
+    else:
+        outputs_dir = _default_outputs_dir()
+        if checkpoint_name:
+            if run_id:
+                checkpoint_path = outputs_dir / run_id / "checkpoints" / checkpoint_name
+            else:
+                checkpoint_path = outputs_dir / "checkpoints" / checkpoint_name
+        else:
+            if not run_id or episode is None:
+                raise ValueError(
+                    "Checkpoint path required: pass --checkpoint, or pass both --run-id and --episode."
+                )
+            checkpoint_path = outputs_dir / run_id / "checkpoints" / f"checkpoint_ep{episode:04d}.pt"
+
+    checkpoint_path = checkpoint_path.resolve()
+    if checkpoint_path.suffix != ".pt":
+        raise ValueError(f"Checkpoint file must be a .pt file: {checkpoint_path}")
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    return str(checkpoint_path)
 
 def evaluate(
     checkpoint_path: str,
@@ -43,6 +77,8 @@ def evaluate(
     report_interval: int = 10,
     reward_mode: Optional[str] = None,
 ) -> float:
+    from train_blue_agent import load_checkpoint, make_env_and_agent
+
     env_cfg = EnvConfig()
 
     train_cfg = TrainConfig()
@@ -55,16 +91,13 @@ def evaluate(
         env_cfg.reward_mode = reward_mode
         train_cfg.reward_mode = reward_mode
 
-    run_dir = os.path.abspath(os.path.join(os.path.dirname(checkpoint_path), os.pardir))
+    run_dir = str(Path(checkpoint_path).resolve().parent.parent)
     env_cfg.save_dir = os.path.join(run_dir, "test")
     env_cfg.log_trajectories = True
     os.makedirs(env_cfg.save_dir, exist_ok=True)
     env_cfg.log_trajectories = False
 
     env, agent = make_env_and_agent(env_cfg, train_cfg, seed=seed)
-
-    if not os.path.isfile(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     load_checkpoint(
         checkpoint_path,
@@ -125,7 +158,10 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a trained blue agent.")
-    parser.add_argument("--checkpoint", type=str, default="outputs/20260126_170325/checkpoints/checkpoint_ep1900.pt", help="Path to checkpoint .pt file")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint .pt file")
+    parser.add_argument("--run-id", type=str, default=None, help="Training run directory under outputs/, e.g. 20260316_175358")
+    parser.add_argument("--episode", type=int, default=None, help="Checkpoint episode number, e.g. 1900 -> checkpoint_ep1900.pt")
+    parser.add_argument("--checkpoint-name", type=str, default=None, help="Checkpoint file name, e.g. checkpoint_ep1900.pt")
     parser.add_argument("--episodes", type=int, default=1000, help="Number of evaluation episodes")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--no-load-blue", action="store_true", help="Skip loading blue agent params")
@@ -138,9 +174,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    checkpoint_path = args.checkpoint or TrainConfig().load_checkpoint_path
-    if not checkpoint_path:
-        raise ValueError("Checkpoint path required (use --checkpoint or set TrainConfig.load_checkpoint_path).")
+    checkpoint_path = _resolve_checkpoint_path(
+        checkpoint=args.checkpoint or TrainConfig().load_checkpoint_path,
+        run_id=args.run_id,
+        episode=args.episode,
+        checkpoint_name=args.checkpoint_name,
+    )
+    print(f"Using checkpoint: {checkpoint_path}")
     evaluate(
         checkpoint_path=checkpoint_path,
         episodes=args.episodes,

@@ -11,6 +11,12 @@ import numpy as np
 class LaunchRegion:
     num_missiles: int
     candidate_launch_count: int
+    x_min: float = 0.0
+    x_max: float = 5.0
+    y_min: float = -10.0
+    y_max: float = 10.0
+    z_min: float = 8.0
+    z_max: float = 12.0
     num_blue_strategies: int = 8
     fictitious_iters: int = 200
     blue_escape_distance: float = 10.0  # km, only for shaping
@@ -90,9 +96,9 @@ class GameTheoreticLauncher:
     # 红弹初始位置设置
     # 之前的设置(红弹在0点附近的一个立方体内发射)
     def _sample_positions(self, K: int) -> np.ndarray:
-        x = self.rng.uniform(0.0, 20.0, size=(K,))
-        y = self.rng.uniform(-10.0, 10.0, size=(K,))
-        z = self.rng.uniform(1.0, 10.0, size=(K,))
+        x = self.rng.uniform(self.region.x_min, self.region.x_max, size=(K,))
+        y = self.rng.uniform(self.region.y_min, self.region.y_max, size=(K,))
+        z = self.rng.uniform(self.region.z_min, self.region.z_max, size=(K,))
         return np.stack([x, y, z], axis=1)
     # 新的设置(红弹在蓝弹周围两个立方体之间的区域内发射)
     # def _sample_positions(

@@ -43,7 +43,7 @@ class EnvConfig:
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
-    num_missiles: int = 1
+    num_missiles: int = 3
     missile_spawn_x: float = 0.0
     missile_spawn_y: float = 0.0
     missile_spawn_z: float = 10.0
@@ -74,6 +74,12 @@ class EnvConfig:
     blue_escape_distance: float = 10.0      # km (only for rough payoff shaping)
     max_launch_time: float = 8.0            # latest first-launch time [s]
     min_launch_interval: float = 1.0        # between launches [s]
+    red_launch_x_min: float = 0.0
+    red_launch_x_max: float = 5.0
+    red_launch_y_min: float = -10.0
+    red_launch_y_max: float = 10.0
+    red_launch_z_min: float = 8.0
+    red_launch_z_max: float = 12.0
 
     # Differential-game controller for PN gains
     use_diff_game: bool = False
