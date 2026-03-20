@@ -47,7 +47,7 @@ class EnvConfig:
     missile_spawn_x: float = 0.0
     missile_spawn_y: float = 0.0
     missile_spawn_z: float = 10.0
-    nav_gain: float = 3.5
+    nav_gain: float = 4.5
     missile_max_overload_g: float = 45.0  # max lateral load factor [g] (40-50g target)
     missile_cd: float = 0.28
     missile_ref_area_m2: float = 0.015
@@ -160,7 +160,7 @@ class EnvConfig:
 class TrainConfig:
     """Training hyperparameters for the blue RL agent."""
 
-    episodes: int = 2000
+    episodes: int = 1000
     gamma: float = 0.99
     lr: float = 1e-3
     batch_size: int = 64

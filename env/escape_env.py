@@ -74,6 +74,12 @@ class EscapeEnv:
         self.missile_is_boosting = np.zeros(M, dtype=bool)
         self.missile_fuel_depleted = np.zeros(M, dtype=bool)
         self.missile_seeker_lost_time = np.zeros(M, dtype=float)
+        self.missile_fov_in_view = np.zeros(M, dtype=bool)
+        self.missile_is_closing = np.zeros(M, dtype=bool)
+        self.missile_closing_speed = np.zeros(M, dtype=float)
+        self._prev_missile_fov_in_view = np.zeros(M, dtype=bool)
+        self._prev_missile_is_closing = np.zeros(M, dtype=bool)
+        self._guidance_events: List[Dict[str, Any]] = []
 
         self.step_count = 0
         self.time = 0.0
@@ -179,6 +185,12 @@ class EscapeEnv:
         self.missile_is_boosting[:] = False
         self.missile_fuel_depleted[:] = False
         self.missile_seeker_lost_time[:] = 0.0
+        self.missile_fov_in_view[:] = False
+        self.missile_is_closing[:] = False
+        self.missile_closing_speed[:] = 0.0
+        self._prev_missile_fov_in_view[:] = False
+        self._prev_missile_is_closing[:] = False
+        self._guidance_events = []
         self.prev_threat = 1.0
         self.forced_maneuver_steps = 0
         self.threat_mode = False
@@ -228,6 +240,7 @@ class EscapeEnv:
         prev_blue_vel = self.blue_vel.copy()
         prev_missile_pos = self.missile_pos.copy()
         prev_missile_vel = self.missile_vel.copy()
+        self._guidance_events = []
 
         # 1) Update blue aircraft
         threat_pre = self._compute_threat()
@@ -284,6 +297,7 @@ class EscapeEnv:
 
         # 3) Seeker constraints (FOV, memory, terminal blind zone)
         guidance_active = np.zeros(self.cfg.num_missiles, dtype=bool)
+        fov_in_view = np.zeros(self.cfg.num_missiles, dtype=bool)
         fov_cos = math.cos(math.radians(self.cfg.missile_seeker_fov_deg))
         blind_range_km = self.cfg.missile_terminal_blind_range_km
         for i in range(self.cfg.num_missiles):
@@ -294,16 +308,19 @@ class EscapeEnv:
             if rel_norm <= blind_range_km:
                 self.missile_seeker_lost_time[i] = 0.0
                 guidance_active[i] = True
+                fov_in_view[i] = True
                 continue
             vel_norm = float(np.linalg.norm(self.missile_vel[i]))
             if rel_norm < 1e-6 or vel_norm < 1e-6:
                 self.missile_seeker_lost_time[i] = 0.0
                 guidance_active[i] = True
+                fov_in_view[i] = True
                 continue
             cos_angle = float(np.dot(self.missile_vel[i], rel) / (vel_norm * rel_norm))
             if cos_angle >= fov_cos:
                 self.missile_seeker_lost_time[i] = 0.0
                 guidance_active[i] = True
+                fov_in_view[i] = True
             else:
                 self.missile_seeker_lost_time[i] += dt
                 if self.missile_seeker_lost_time[i] > self.cfg.missile_seeker_memory_time:
@@ -317,6 +334,61 @@ class EscapeEnv:
 
         nav_gains_effective = self.nav_gains.copy()
         nav_gains_effective[~guidance_active] = 0.0
+
+        # 3.1) Geometry state: whether each launched/alive missile is in closing geometry.
+        is_closing = np.zeros(self.cfg.num_missiles, dtype=bool)
+        closing_speed = np.zeros(self.cfg.num_missiles, dtype=float)
+        for i in range(self.cfg.num_missiles):
+            if not (self.missile_launched[i] and self.missile_alive[i]):
+                continue
+            rel = self.blue_pos - self.missile_pos[i]
+            rel_norm = float(np.linalg.norm(rel))
+            if rel_norm < 1e-6:
+                continue
+            los = rel / rel_norm
+            rel_vel = self.blue_vel - self.missile_vel[i]
+            vc = -float(np.dot(rel_vel, los))
+            closing_speed[i] = vc
+            is_closing[i] = vc > 0.0
+
+        # 3.2) Record per-missile state transitions (FOV and closing geometry).
+        for i in range(self.cfg.num_missiles):
+            if not self.missile_launched[i]:
+                continue
+            prev_fov = bool(self._prev_missile_fov_in_view[i])
+            curr_fov = bool(fov_in_view[i])
+            if prev_fov != curr_fov:
+                self._guidance_events.append(
+                    {
+                        "time": float(self.time),
+                        "step": int(self.step_count),
+                        "missile_id": int(i),
+                        "event": "fov_state_change",
+                        "from": prev_fov,
+                        "to": curr_fov,
+                    }
+                )
+
+            prev_closing = bool(self._prev_missile_is_closing[i])
+            curr_closing = bool(is_closing[i])
+            if prev_closing != curr_closing:
+                self._guidance_events.append(
+                    {
+                        "time": float(self.time),
+                        "step": int(self.step_count),
+                        "missile_id": int(i),
+                        "event": "closing_state_change",
+                        "from": prev_closing,
+                        "to": curr_closing,
+                        "closing_speed": float(closing_speed[i]),
+                    }
+                )
+
+        self.missile_fov_in_view = fov_in_view
+        self.missile_is_closing = is_closing
+        self.missile_closing_speed = closing_speed
+        self._prev_missile_fov_in_view = fov_in_view.copy()
+        self._prev_missile_is_closing = is_closing.copy()
 
         # 4) Update missile speed profiles for launched & alive missiles
         idx_active = np.where(self.missile_launched & self.missile_alive)[0]
@@ -456,6 +528,10 @@ class EscapeEnv:
             "missile_launched": self.missile_launched.copy(),
             "missile_time_alive": self.missile_time_alive.copy(),
             "launch_times": self.missile_launch_times.copy(),
+            "missile_fov_in_view": self.missile_fov_in_view.copy(),
+            "missile_is_closing": self.missile_is_closing.copy(),
+            "missile_closing_speed": self.missile_closing_speed.copy(),
+            "guidance_events": list(self._guidance_events),
         }
         return obs, float(reward), bool(self.done), info
 
@@ -915,6 +991,9 @@ class EscapeEnv:
                     0.0,
                     float(self.prev_threat),
                     -1 if self._last_action is None else int(self._last_action),
+                    -1,
+                    -1,
+                    0.0,
                 ]
             )
 
@@ -965,6 +1044,9 @@ class EscapeEnv:
                         dist_to_blue,
                         float(self.prev_threat),
                         -1,
+                        int(self.missile_fov_in_view[i]),
+                        int(self.missile_is_closing[i]),
+                        float(self.missile_closing_speed[i]),
                     ]
                 )
 
@@ -1002,6 +1084,7 @@ class EscapeEnv:
                     "time", "step", "entity_type", "entity_id", "launched", "alive",
                     "x", "y", "z", "vx", "vy", "vz", "speed",
                     "ax", "ay", "az", "accel_norm", "distance_to_blue", "threat", "action",
+                    "fov_in_view", "is_closing", "closing_speed",
                 ],
                 self._analysis_log,
                 episode_index=ep_idx,
