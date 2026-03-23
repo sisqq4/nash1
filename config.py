@@ -43,7 +43,7 @@ class EnvConfig:
     missile_speed_decay_interval: float = 1.0  # [s]
     missile_speed_decay_factor: float = 0.99
     missile_min_speed: float = 980.0 / 3600.0  # km/s
-    num_missiles: int = 3
+    num_missiles: int = 1
     missile_spawn_x: float = 0.0
     missile_spawn_y: float = 0.0
     missile_spawn_z: float = 10.0

@@ -71,7 +71,7 @@ def load_checkpoint(
     load_blue: bool = True,
     load_red: bool = True,
 ) -> Dict[str, Any]:
-    payload = torch.load(path, map_location=agent.device)
+    payload = torch.load(path, map_location=agent.device, weights_only=False)
     if load_blue and "blue" in payload:
         agent.load_state(payload["blue"])
     if load_red and "red" in payload:
