@@ -44,7 +44,23 @@ def _plot_timing(rows: list[dict[str, float]], out_dir: Path) -> None:
     if not rows:
         return
     rows = sorted(rows, key=lambda x: x["distance_km"])
-    metrics = ["win_rate", "avg_reward", "avg_steps", "avg_min_dist"]
+    metrics = [
+        "win_rate",
+        "hit_rate",
+        "crash_rate",
+        "timeout_rate",
+        "missiles_exhausted_rate",
+        "avg_reward",
+        "avg_steps",
+        "avg_min_dist",
+        "avg_final_dist",
+        "avg_final_speed",
+        "avg_speed",
+        "avg_min_speed",
+        "avg_altitude",
+        "avg_roll_abs_deg",
+        "avg_turn_rate_deg",
+    ]
     for metric in metrics:
         plt.figure(figsize=(8, 4.8))
         plt.plot([r["distance_km"] for r in rows], [r[metric] for r in rows], marker="o")
@@ -107,6 +123,17 @@ def main() -> None:
         grouped[distance]["reward"].append(float(row["reward"]))
         grouped[distance]["steps"].append(float(row["steps"]))
         grouped[distance]["min_dist"].append(float(row["min_dist"]))
+        grouped[distance]["final_dist"].append(float(row["final_dist"]))
+        grouped[distance]["final_speed"].append(float(row["final_speed"]))
+        grouped[distance]["avg_speed"].append(float(row["avg_speed"]))
+        grouped[distance]["min_speed"].append(float(row["min_speed"]))
+        grouped[distance]["avg_altitude"].append(float(row["avg_altitude"]))
+        grouped[distance]["avg_roll_abs_deg"].append(float(row["avg_roll_abs_deg"]))
+        grouped[distance]["avg_turn_rate_deg"].append(float(row["avg_turn_rate_deg"]))
+        grouped[distance]["hit"].append(float(row["hit"]))
+        grouped[distance]["crashed"].append(float(row["crashed"]))
+        grouped[distance]["timeout"].append(float(row["timeout"]))
+        grouped[distance]["missiles_exhausted"].append(float(row["missiles_exhausted"]))
 
     result_rows: list[dict[str, float]] = []
     for distance, vals in sorted(grouped.items()):
@@ -115,9 +142,20 @@ def main() -> None:
                 "distance_km": float(distance),
                 "episodes": float(len(vals["win"])),
                 "win_rate": _mean(vals["win"]),
+                "hit_rate": _mean(vals["hit"]),
+                "crash_rate": _mean(vals["crashed"]),
+                "timeout_rate": _mean(vals["timeout"]),
+                "missiles_exhausted_rate": _mean(vals["missiles_exhausted"]),
                 "avg_reward": _mean(vals["reward"]),
                 "avg_steps": _mean(vals["steps"]),
                 "avg_min_dist": _mean(vals["min_dist"]),
+                "avg_final_dist": _mean(vals["final_dist"]),
+                "avg_final_speed": _mean(vals["final_speed"]),
+                "avg_speed": _mean(vals["avg_speed"]),
+                "avg_min_speed": _mean(vals["min_speed"]),
+                "avg_altitude": _mean(vals["avg_altitude"]),
+                "avg_roll_abs_deg": _mean(vals["avg_roll_abs_deg"]),
+                "avg_turn_rate_deg": _mean(vals["avg_turn_rate_deg"]),
             }
         )
 

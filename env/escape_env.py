@@ -131,6 +131,15 @@ class EscapeEnv:
         self._analysis_log: List[List[float | int | str]] | None = None
         self._analysis_name: str | None = None
         self._last_action: int | None = None
+        self._episode_speed_sum = 0.0
+        self._episode_speed_count = 0
+        self._episode_min_speed = 0.0
+        self._episode_altitude_sum = 0.0
+        self._episode_altitude_count = 0
+        self._episode_roll_abs_sum_deg = 0.0
+        self._episode_roll_abs_count = 0
+        self._episode_turn_rate_sum = 0.0
+        self._episode_turn_rate_count = 0
     # ------------------------------------------------------------------
     def reset(self) -> np.ndarray:
         self.step_count = 0
@@ -200,6 +209,16 @@ class EscapeEnv:
         )
         self.prev_min_dist = float(np.min(self.initial_missile_distances))
         self.prev_blue_vel = self.blue_vel.copy()
+        self._episode_speed_sum = 0.0
+        self._episode_speed_count = 0
+        self._episode_min_speed = float(np.linalg.norm(self.blue_vel))
+        self._episode_altitude_sum = 0.0
+        self._episode_altitude_count = 0
+        self._episode_roll_abs_sum_deg = 0.0
+        self._episode_roll_abs_count = 0
+        self._episode_turn_rate_sum = 0.0
+        self._episode_turn_rate_count = 0
+        self._update_episode_stats(turn_rate_deg=0.0)
 
         if self.log_enabled:
             self._init_logging()
@@ -490,6 +509,8 @@ class EscapeEnv:
 
         # 9) Hit detection (line-segment / sphere)
         hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
+        turn_rate_deg = self._compute_turn_rate_deg(prev_blue_vel)
+        self._update_episode_stats(turn_rate_deg=turn_rate_deg)
 
         timeout = self.step_count >= self.cfg.max_steps
         missiles_exhausted = not np.any(self.missile_alive)
@@ -518,6 +539,13 @@ class EscapeEnv:
             "time": float(self.time),
             "step": int(self.step_count),
             "min_dist": float(min_dist),
+            "final_dist": self._compute_final_dist(),
+            "final_speed": float(np.linalg.norm(self.blue_vel)),
+            "avg_speed": self._episode_speed_sum / max(self._episode_speed_count, 1),
+            "min_speed": float(self._episode_min_speed),
+            "avg_altitude": self._episode_altitude_sum / max(self._episode_altitude_count, 1),
+            "avg_roll_abs_deg": self._episode_roll_abs_sum_deg / max(self._episode_roll_abs_count, 1),
+            "avg_turn_rate_deg": self._episode_turn_rate_sum / max(self._episode_turn_rate_count, 1),
             "hit": bool(hit),
             "timeout": bool(timeout),
             "crashed": bool(crashed),
@@ -675,6 +703,33 @@ class EscapeEnv:
         cos_angle = float(np.clip(cos_angle, -1.0, 1.0))
         angle_deg = float(math.degrees(math.acos(cos_angle)))
         return angle_deg / max(self.cfg.dt, 1e-6)
+
+    def _compute_final_dist(self) -> float:
+        launched = self.missile_launched
+        if np.any(launched):
+            dists = np.linalg.norm(self.missile_pos[launched] - self.blue_pos[None, :], axis=1)
+            return float(np.min(dists))
+        if self.initial_missile_distances.size > 0:
+            return float(np.min(self.initial_missile_distances))
+        return 0.0
+
+    def _update_episode_stats(self, turn_rate_deg: float) -> None:
+        speed = float(np.linalg.norm(self.blue_vel))
+        altitude = float(self.blue_pos[2])
+        roll_abs_deg = float(math.degrees(abs(self.blue_model.roll_rad or 0.0)))
+
+        self._episode_speed_sum += speed
+        self._episode_speed_count += 1
+        self._episode_min_speed = min(self._episode_min_speed, speed)
+
+        self._episode_altitude_sum += altitude
+        self._episode_altitude_count += 1
+
+        self._episode_roll_abs_sum_deg += roll_abs_deg
+        self._episode_roll_abs_count += 1
+
+        self._episode_turn_rate_sum += float(turn_rate_deg)
+        self._episode_turn_rate_count += 1
 
     def _reward_short_range(self, min_dist: float, prev_blue_vel: np.ndarray) -> float:
         reward = 0.0

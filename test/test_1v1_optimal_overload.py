@@ -43,7 +43,23 @@ def _write_csv(path: Path, rows: list[dict[str, float]]) -> None:
 def _plot_overload(rows: list[dict[str, float]], out_dir: Path) -> None:
     if not rows:
         return
-    metrics = ["win_rate", "avg_reward", "avg_steps", "avg_min_dist"]
+    metrics = [
+        "win_rate",
+        "hit_rate",
+        "crash_rate",
+        "timeout_rate",
+        "missiles_exhausted_rate",
+        "avg_reward",
+        "avg_steps",
+        "avg_min_dist",
+        "avg_final_dist",
+        "avg_final_speed",
+        "avg_speed",
+        "avg_min_speed",
+        "avg_altitude",
+        "avg_roll_abs_deg",
+        "avg_turn_rate_deg",
+    ]
     for metric in metrics:
         overload_to_points: dict[int, list[tuple[float, float]]] = defaultdict(list)
         for r in rows:
@@ -76,7 +92,7 @@ def main() -> None:
         checkpoint_name=args.checkpoint_name,
     )
 
-    overload_set = [6.0, 9.0, 12.0]
+    overload_set = [6.0, 7.0, 8.0, 9.0]
     distances = list(range(args.min_distance_km, args.max_distance_km + 1, args.distance_step_km))
     scenarios = []
     for distance in distances:
@@ -125,6 +141,17 @@ def main() -> None:
         grouped[key]["reward"].append(float(row["reward"]))
         grouped[key]["steps"].append(float(row["steps"]))
         grouped[key]["min_dist"].append(float(row["min_dist"]))
+        grouped[key]["final_dist"].append(float(row["final_dist"]))
+        grouped[key]["final_speed"].append(float(row["final_speed"]))
+        grouped[key]["avg_speed"].append(float(row["avg_speed"]))
+        grouped[key]["min_speed"].append(float(row["min_speed"]))
+        grouped[key]["avg_altitude"].append(float(row["avg_altitude"]))
+        grouped[key]["avg_roll_abs_deg"].append(float(row["avg_roll_abs_deg"]))
+        grouped[key]["avg_turn_rate_deg"].append(float(row["avg_turn_rate_deg"]))
+        grouped[key]["hit"].append(float(row["hit"]))
+        grouped[key]["crashed"].append(float(row["crashed"]))
+        grouped[key]["timeout"].append(float(row["timeout"]))
+        grouped[key]["missiles_exhausted"].append(float(row["missiles_exhausted"]))
 
     result_rows: list[dict[str, float]] = []
     for (distance, overload), vals in sorted(grouped.items()):
@@ -134,9 +161,20 @@ def main() -> None:
                 "blue_overload_g": float(overload),
                 "episodes": float(len(vals["win"])),
                 "win_rate": _mean(vals["win"]),
+                "hit_rate": _mean(vals["hit"]),
+                "crash_rate": _mean(vals["crashed"]),
+                "timeout_rate": _mean(vals["timeout"]),
+                "missiles_exhausted_rate": _mean(vals["missiles_exhausted"]),
                 "avg_reward": _mean(vals["reward"]),
                 "avg_steps": _mean(vals["steps"]),
                 "avg_min_dist": _mean(vals["min_dist"]),
+                "avg_final_dist": _mean(vals["final_dist"]),
+                "avg_final_speed": _mean(vals["final_speed"]),
+                "avg_speed": _mean(vals["avg_speed"]),
+                "avg_min_speed": _mean(vals["min_speed"]),
+                "avg_altitude": _mean(vals["avg_altitude"]),
+                "avg_roll_abs_deg": _mean(vals["avg_roll_abs_deg"]),
+                "avg_turn_rate_deg": _mean(vals["avg_turn_rate_deg"]),
             }
         )
 

@@ -81,6 +81,11 @@ def _write_csv(path: str, rows: List[Dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def _mean_from_group(group: Dict[str, Any], field: str) -> float:
+    episodes = max(int(group["episodes"]), 1)
+    return float(group[f"{field}_sum"]) / episodes
+
+
 def run_scenario_sweep(
     checkpoint_path: str,
     output_root: str,
@@ -169,6 +174,13 @@ def run_scenario_sweep(
                 "win": int(win),
                 "steps": int(info.get("step", 0)) if info else 0,
                 "min_dist": float(info.get("min_dist", 0.0)) if info else 0.0,
+                "final_dist": float(info.get("final_dist", 0.0)) if info else 0.0,
+                "final_speed": float(info.get("final_speed", 0.0)) if info else 0.0,
+                "avg_speed": float(info.get("avg_speed", 0.0)) if info else 0.0,
+                "min_speed": float(info.get("min_speed", 0.0)) if info else 0.0,
+                "avg_altitude": float(info.get("avg_altitude", 0.0)) if info else 0.0,
+                "avg_roll_abs_deg": float(info.get("avg_roll_abs_deg", 0.0)) if info else 0.0,
+                "avg_turn_rate_deg": float(info.get("avg_turn_rate_deg", 0.0)) if info else 0.0,
                 "timeout": int(bool(info.get("timeout", False))) if info else 0,
                 "hit": int(bool(info.get("hit", False))) if info else 0,
                 "crashed": int(bool(info.get("crashed", False))) if info else 0,
@@ -217,6 +229,17 @@ def run_scenario_sweep(
                 "reward_sum": 0.0,
                 "steps_sum": 0,
                 "min_dist_sum": 0.0,
+                "final_dist_sum": 0.0,
+                "final_speed_sum": 0.0,
+                "avg_speed_sum": 0.0,
+                "min_speed_sum": 0.0,
+                "avg_altitude_sum": 0.0,
+                "avg_roll_abs_deg_sum": 0.0,
+                "avg_turn_rate_deg_sum": 0.0,
+                "timeout_sum": 0,
+                "hit_sum": 0,
+                "crashed_sum": 0,
+                "missiles_exhausted_sum": 0,
             }
         g = grouped[key]
         g["episodes"] += 1
@@ -224,6 +247,17 @@ def run_scenario_sweep(
         g["reward_sum"] += float(row["reward"])
         g["steps_sum"] += int(row["steps"])
         g["min_dist_sum"] += float(row["min_dist"])
+        g["final_dist_sum"] += float(row["final_dist"])
+        g["final_speed_sum"] += float(row["final_speed"])
+        g["avg_speed_sum"] += float(row["avg_speed"])
+        g["min_speed_sum"] += float(row["min_speed"])
+        g["avg_altitude_sum"] += float(row["avg_altitude"])
+        g["avg_roll_abs_deg_sum"] += float(row["avg_roll_abs_deg"])
+        g["avg_turn_rate_deg_sum"] += float(row["avg_turn_rate_deg"])
+        g["timeout_sum"] += int(row["timeout"])
+        g["hit_sum"] += int(row["hit"])
+        g["crashed_sum"] += int(row["crashed"])
+        g["missiles_exhausted_sum"] += int(row["missiles_exhausted"])
 
     result_rows: List[Dict[str, Any]] = []
     for key in sorted(grouped.keys()):
@@ -235,9 +269,20 @@ def run_scenario_sweep(
                 "scenario_name": g["scenario_name"],
                 "episodes": g["episodes"],
                 "win_rate": g["win_sum"] / episodes,
-                "avg_reward": g["reward_sum"] / episodes,
-                "avg_steps": g["steps_sum"] / episodes,
-                "avg_min_dist": g["min_dist_sum"] / episodes,
+                "hit_rate": g["hit_sum"] / episodes,
+                "crash_rate": g["crashed_sum"] / episodes,
+                "timeout_rate": g["timeout_sum"] / episodes,
+                "missiles_exhausted_rate": g["missiles_exhausted_sum"] / episodes,
+                "avg_reward": _mean_from_group(g, "reward"),
+                "avg_steps": _mean_from_group(g, "steps"),
+                "avg_min_dist": _mean_from_group(g, "min_dist"),
+                "avg_final_dist": _mean_from_group(g, "final_dist"),
+                "avg_final_speed": _mean_from_group(g, "final_speed"),
+                "avg_speed": _mean_from_group(g, "avg_speed"),
+                "avg_min_speed": _mean_from_group(g, "min_speed"),
+                "avg_altitude": _mean_from_group(g, "avg_altitude"),
+                "avg_roll_abs_deg": _mean_from_group(g, "avg_roll_abs_deg"),
+                "avg_turn_rate_deg": _mean_from_group(g, "avg_turn_rate_deg"),
             }
         )
     _write_csv(os.path.join(results_dir, "result.csv"), result_rows)
