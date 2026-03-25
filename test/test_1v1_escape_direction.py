@@ -18,19 +18,19 @@ from scenario_test_utils import resolve_checkpoint_path, run_scenario_sweep
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="1v1 逃逸方向测试")
     parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--run-id", type=str, default="20260316_105748")
+    parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
     parser.add_argument("--episodes-per-scenario", type=int, default=300)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
-    parser.add_argument("--heading-jitter-deg", type=float, default=0.0, help="每个方向场景的初始航向扰动范围(±度)")
+    parser.add_argument("--heading-jitter-deg", type=float, default=30.0, help="每个方向场景的初始航向扰动范围(±度)")
     parser.add_argument("--distance-jitter-km", type=float, default=0.0, help="初始距离扰动范围(±km)")
     parser.add_argument("--lateral-jitter-km", type=float, default=0.3, help="初始横向扰动范围(±km)")
     parser.add_argument("--min-distance-km", type=int, default=6)
     parser.add_argument("--max-distance-km", type=int, default=30)
-    parser.add_argument("--distance-step-km", type=int, default=1)
-    parser.add_argument("--angle-step-deg", type=int, default=45)
+    parser.add_argument("--distance-step-km", type=int, default=3)
+    parser.add_argument("--angle-step-deg", type=int, default=90)
     return parser.parse_args()
 
 def _mean(vals: list[float]) -> float:
@@ -135,6 +135,7 @@ def main() -> None:
                 "red_launch_y_max": y_jitter,
                 "red_launch_z_min": 10.0,
                 "red_launch_z_max": 10.0,
+                "missile_update_dt": 0.01,
             },
         }
         for distance in distances

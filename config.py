@@ -25,6 +25,7 @@ class EnvConfig:
 
     # Simulation
     dt: float = 0.1          # [s] physics & hit-judgement step
+    missile_update_dt: float = 0.01  # [s] inner missile guidance/position update step
     max_steps: int = 1200    # episode length in steps (~120 s)
 
     # Blue aircraft dynamics

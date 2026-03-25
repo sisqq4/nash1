@@ -168,15 +168,13 @@ class EscapeEnv:
         v_dir = np.array([math.cos(heading), math.sin(heading), 0.0], dtype=float)
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
-        # Red: fixed spawn position with launch timing from the game-theory planner
-        # Red: launch positions and launch timing from the game-theory planner
-        launch_positions, launch_times = self.launcher.compute_launch_plan(
-            blue_initial_pos=self.blue_pos,
-            blue_speed=self.cfg.blue_max_speed,
-            missile_speed=self.cfg.missile_speed,
+        # Red: fixed spawn at (0, 0, 10000 m) and immediate launch.
+        fixed_spawn = np.array(
+            [self.cfg.missile_spawn_x, self.cfg.missile_spawn_y, self.cfg.missile_spawn_z],
+            dtype=float,
         )
-        self.missile_pos = launch_positions.astype(float).copy()
-        self.missile_launch_times = launch_times.astype(float).copy()
+        self.missile_pos = np.repeat(fixed_spawn[None, :], self.cfg.num_missiles, axis=0)
+        self.missile_launch_times = np.zeros(self.cfg.num_missiles, dtype=float)
         self.missile_launched[:] = False
 
         # Velocities start at zero (not yet launched)
@@ -471,20 +469,31 @@ class EscapeEnv:
         nav_gains_effective = self.nav_gains.copy()
         nav_gains_effective[~guidance_active] = 0.0
 
-        # 6) PN update for launched missiles
+        # 6) PN update for launched missiles (inner integration at missile_update_dt)
         idx_launched = np.where(self.missile_launched)[0]
         if idx_launched.size > 0:
-            sub_pos, sub_vel = self.missile_model.step(
-                self.missile_pos[idx_launched],
-                self.missile_vel[idx_launched],
-                self.missile_speed[idx_launched],
-                self.blue_pos,
-                self.blue_vel,
-                nav_gains_effective[idx_launched],
-                max_overload_g=max_overload[idx_launched],
-            )
-            self.missile_pos[idx_launched] = sub_pos
-            self.missile_vel[idx_launched] = sub_vel
+            inner_dt = float(getattr(self.cfg, "missile_update_dt", dt))
+            if inner_dt <= 0.0:
+                inner_dt = dt
+            substeps = max(1, int(round(dt / inner_dt)))
+            missile_dt = dt / substeps
+            original_missile_dt = self.missile_model.dt
+            self.missile_model.dt = missile_dt
+            try:
+                for _ in range(substeps):
+                    sub_pos, sub_vel = self.missile_model.step(
+                        self.missile_pos[idx_launched],
+                        self.missile_vel[idx_launched],
+                        self.missile_speed[idx_launched],
+                        self.blue_pos,
+                        self.blue_vel,
+                        nav_gains_effective[idx_launched],
+                        max_overload_g=max_overload[idx_launched],
+                    )
+                    self.missile_pos[idx_launched] = sub_pos
+                    self.missile_vel[idx_launched] = sub_vel
+            finally:
+                self.missile_model.dt = original_missile_dt
 
         # 7) Update missile lifetime / energy
         self.missile_time_alive[self.missile_launched & self.missile_alive] += dt

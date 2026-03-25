@@ -18,7 +18,7 @@ from scenario_test_utils import resolve_checkpoint_path, run_scenario_sweep
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="1v1 最优过载选择测试")
     parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--run-id", type=str, default="20260316_105748")
+    parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
     parser.add_argument("--episodes-per-scenario", type=int, default=300)
@@ -116,6 +116,7 @@ def main() -> None:
                         "red_launch_y_max": 0.0,
                         "red_launch_z_min": 10.0,
                         "red_launch_z_max": 10.0,
+                        "missile_update_dt": 0.01,
                         "blue_accel": g_to_kmps2(overload_g),
                     },
                 }
