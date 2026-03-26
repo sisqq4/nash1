@@ -35,6 +35,10 @@ class EnvConfig:
     # Blue aircraft initial heading (degrees in xy-plane, 0 along +x)
     blue_heading_min: float = -180.0
     blue_heading_max: float = 180.0
+    blue_fixed_start: bool = False
+    blue_fixed_x: float = 0.0
+    blue_fixed_y: float = 0.0
+    blue_fixed_z: float = 10.0
 
     # Missile dynamics
     missile_speed: float = 4900.0 / 3600.0   # km/s
@@ -48,6 +52,13 @@ class EnvConfig:
     missile_spawn_x: float = 0.0
     missile_spawn_y: float = 0.0
     missile_spawn_z: float = 10.0
+    missile_spawn_mode: str = "fixed_point"  # fixed_point | annulus
+    missile_spawn_radius_min: float = 6.0
+    missile_spawn_radius_max: float = 30.0
+    missile_spawn_alt_min: float = 7.0
+    missile_spawn_alt_max: float = 13.0
+    missile_launch_time_std: float = 0.5
+    missile_launch_time_clip: float = 2.0
     nav_gain: float = 4.5
     missile_max_overload_g: float = 45.0  # max lateral load factor [g] (40-50g target)
     missile_cd: float = 0.28
@@ -124,7 +135,7 @@ class EnvConfig:
     # Threat-driven maneuver overrides
     threat_maneuver_start: float = 0.6
     threat_maneuver_stop: float = 0.4
-    threat_maneuver_steps: int = 20
+    threat_maneuver_steps: int = 1
 
     # Reward selection
     reward_mode: str = "auto"  # auto | short_range | mid_small_azimuth | mid_large_azimuth
@@ -151,6 +162,27 @@ class EnvConfig:
     mid_large_speed_weight: float = 0.4
     mid_large_level_weight: float = 0.4
     mid_large_roll_zero_weight: float = 0.6
+    # Multi-missile collaborative reward weights
+    multi_distance_weight: float = 1.0
+    multi_height_weight: float = 0.5
+    multi_threat_relief_weight: float = 0.8
+    multi_threat_increase_weight: float = 1.2
+    multi_encirclement_penalty_weight: float = 1.0
+    # Cenc = c1 * Cang + c2 * Csyn + c3 * Ccor
+    coop_c1: float = 0.4
+    coop_c2: float = 0.35
+    coop_c3: float = 0.25
+    coop_tau_t: float = 8.0
+    coop_corridor_ref_width: float = 2.0
+
+    # Threat score Ti = sigma(b1*(1/ri)+b2*max(0,-r_dot_i)+b3*(1/tgo_i)+b4*|q_i|+b5*xi_M_i)
+    threat_b1: float = 1.0
+    threat_b2: float = 1.2
+    threat_b3: float = 1.1
+    threat_b4: float = 0.6
+    threat_b5: float = 0.8
+    threat_softmax_gamma1: float = 2.0
+    threat_softmax_gamma2: float = 0.8
 
     # Logging / Tacview export
     save_dir: str = "outputs"

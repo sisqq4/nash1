@@ -148,15 +148,21 @@ class EscapeEnv:
         self._last_action = None
         self.blue_model.reset()
 
-        # Blue initial position: random in box (above ground)
-        self.blue_pos = np.array(
-            [
-                self.rng.uniform(self.cfg.blue_x_min, self.cfg.blue_x_max),
-                self.rng.uniform(self.cfg.blue_y_min, self.cfg.blue_y_max),
-                self.rng.uniform(self.cfg.blue_z_min, self.cfg.blue_z_max),
-            ],
-            dtype=float,
-        )
+        # Blue initial position
+        if self.cfg.blue_fixed_start:
+            self.blue_pos = np.array(
+                [self.cfg.blue_fixed_x, self.cfg.blue_fixed_y, self.cfg.blue_fixed_z],
+                dtype=float,
+            )
+        else:
+            self.blue_pos = np.array(
+                [
+                    self.rng.uniform(self.cfg.blue_x_min, self.cfg.blue_x_max),
+                    self.rng.uniform(self.cfg.blue_y_min, self.cfg.blue_y_max),
+                    self.rng.uniform(self.cfg.blue_z_min, self.cfg.blue_z_max),
+                ],
+                dtype=float,
+            )
 
         # Random initial velocity direction
         # Random initial velocity direction in xy-plane
@@ -168,13 +174,9 @@ class EscapeEnv:
         v_dir = np.array([math.cos(heading), math.sin(heading), 0.0], dtype=float)
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
-        # Red: fixed spawn at (0, 0, 10000 m) and immediate launch.
-        fixed_spawn = np.array(
-            [self.cfg.missile_spawn_x, self.cfg.missile_spawn_y, self.cfg.missile_spawn_z],
-            dtype=float,
-        )
-        self.missile_pos = np.repeat(fixed_spawn[None, :], self.cfg.num_missiles, axis=0)
-        self.missile_launch_times = np.zeros(self.cfg.num_missiles, dtype=float)
+        # Red missile spawn and launch time profile.
+        self.missile_pos = self._sample_missile_spawn_positions()
+        self.missile_launch_times = self._sample_launch_times(self.cfg.num_missiles)
         self.missile_launched[:] = False
 
         # Velocities start at zero (not yet launched)
@@ -262,7 +264,7 @@ class EscapeEnv:
         # 1) Update blue aircraft
         threat_pre = self._compute_threat()
         if threat_pre >= self.cfg.threat_maneuver_start:
-            self.threat_mode = False
+            self.threat_mode = True
         elif threat_pre <= self.cfg.threat_maneuver_stop:
             self.threat_mode = False
 
@@ -529,13 +531,13 @@ class EscapeEnv:
             reward = self.cfg.ground_crash_penalty
             self.done = True
         elif hit:
-            reward = -1.0
+            reward = -100.0
             self.done = True
         elif missiles_exhausted:
-            reward = 1.0
+            reward = 100.0
             self.done = True
         elif timeout:
-            reward = 1.0
+            reward = 100.0
             self.done = True
         else:
             reward = self._compute_reward(min_dist, prev_blue_vel)
@@ -647,6 +649,11 @@ class EscapeEnv:
         return float(threat)
 
     def _compute_reward(self, min_dist: float, prev_blue_vel: np.ndarray) -> float:
+        if self.cfg.reward_mode == "multi_coop":
+            reward = self._reward_multi_coop(prev_blue_vel)
+            self.prev_min_dist = float(min_dist)
+            self.prev_blue_vel = self.blue_vel.copy()
+            return float(reward)
         primary_idx = self._select_primary_missile()
         azimuth_deg = (
             self._compute_missile_azimuth_deg(primary_idx) if primary_idx is not None else 0.0
@@ -680,6 +687,134 @@ class EscapeEnv:
         self.prev_threat = threat
         self.prev_min_dist = float(min_dist)
         self.prev_blue_vel = self.blue_vel.copy()
+        return float(reward)
+
+    def _sample_missile_spawn_positions(self) -> np.ndarray:
+        if self.cfg.missile_spawn_mode != "annulus":
+            fixed_spawn = np.array(
+                [self.cfg.missile_spawn_x, self.cfg.missile_spawn_y, self.cfg.missile_spawn_z],
+                dtype=float,
+            )
+            return np.repeat(fixed_spawn[None, :], self.cfg.num_missiles, axis=0)
+
+        radii = self.rng.uniform(self.cfg.missile_spawn_radius_min, self.cfg.missile_spawn_radius_max, self.cfg.num_missiles)
+        bearings = self.rng.uniform(-math.pi, math.pi, self.cfg.num_missiles)
+        alts = self.rng.uniform(self.cfg.missile_spawn_alt_min, self.cfg.missile_spawn_alt_max, self.cfg.num_missiles)
+        x = radii * np.cos(bearings)
+        y = radii * np.sin(bearings)
+        return np.stack([x, y, alts], axis=1).astype(float)
+
+    def _sample_launch_times(self, num_missiles: int) -> np.ndarray:
+        if num_missiles <= 1:
+            return np.zeros(1, dtype=float)
+        launch_jitter = self.rng.normal(0.0, self.cfg.missile_launch_time_std, size=num_missiles)
+        launch_jitter = np.clip(launch_jitter, -self.cfg.missile_launch_time_clip, self.cfg.missile_launch_time_clip)
+        launch_times = launch_jitter - float(np.min(launch_jitter))
+        return launch_times.astype(float)
+
+    def _active_missile_indices(self) -> np.ndarray:
+        return np.where(self.missile_launched & self.missile_alive)[0]
+
+    def _compute_threat_terms(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        idx_active = self._active_missile_indices()
+        if idx_active.size == 0:
+            return idx_active, np.zeros(0), np.zeros(0), np.zeros(0)
+
+        r_vec = self.blue_pos[None, :] - self.missile_pos[idx_active]
+        r = np.linalg.norm(r_vec, axis=1)
+        rel_vel = self.blue_vel[None, :] - self.missile_vel[idx_active]
+        los = r_vec / np.maximum(r[:, None], 1e-6)
+        r_dot = np.sum(rel_vel * los, axis=1)
+        closing = np.maximum(-r_dot, 1e-6)
+        tgo = r / closing
+        q = np.linalg.norm(np.cross(r_vec, rel_vel), axis=1) / np.maximum(r ** 2, 1e-6)
+
+        # Normalized residual maneuver capability proxy from speed margin.
+        xi = np.clip(
+            (self.missile_speed[idx_active] - self.cfg.missile_min_speed)
+            / max(self.cfg.missile_max_speed - self.cfg.missile_min_speed, 1e-6),
+            0.0,
+            1.0,
+        )
+        return idx_active, r, tgo, q + 0.3 * xi
+
+    def _compute_threat_scores(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        idx_active, r, tgo, q_plus_xi = self._compute_threat_terms()
+        if idx_active.size == 0:
+            return idx_active, np.zeros(0), np.zeros(0)
+
+        r_vec = self.blue_pos[None, :] - self.missile_pos[idx_active]
+        rel_vel = self.blue_vel[None, :] - self.missile_vel[idx_active]
+        los = r_vec / np.maximum(r[:, None], 1e-6)
+        r_dot = np.sum(rel_vel * los, axis=1)
+        closing = np.maximum(0.0, -r_dot)
+        xi = np.clip(
+            (self.missile_speed[idx_active] - self.cfg.missile_min_speed)
+            / max(self.cfg.missile_max_speed - self.cfg.missile_min_speed, 1e-6),
+            0.0,
+            1.0,
+        )
+        raw = (
+            self.cfg.threat_b1 * (1.0 / np.maximum(r, 1e-6))
+            + self.cfg.threat_b2 * closing
+            + self.cfg.threat_b3 * (1.0 / np.maximum(tgo, 1e-6))
+            + self.cfg.threat_b4 * np.abs(q_plus_xi - 0.3 * xi)
+            + self.cfg.threat_b5 * xi
+        )
+        ti = 1.0 / (1.0 + np.exp(-raw))
+        return idx_active, ti, tgo
+
+    def _compute_collaborative_encirclement(self, idx_active: np.ndarray, tgo: np.ndarray) -> float:
+        if idx_active.size <= 1:
+            return 0.0
+        rel = self.missile_pos[idx_active, :2] - self.blue_pos[None, :2]
+        beta = np.sort(np.mod(np.arctan2(rel[:, 1], rel[:, 0]), 2.0 * math.pi))
+        if beta.size <= 1:
+            c_ang = 0.0
+        else:
+            gaps = np.diff(np.concatenate([beta, beta[:1] + 2.0 * math.pi]))
+            delta_beta_max = float(np.max(gaps))
+            c_ang = 1.0 - delta_beta_max / (2.0 * math.pi)
+
+        tgo_var = float(np.var(tgo))
+        c_syn = math.exp(-tgo_var / max(self.cfg.coop_tau_t ** 2, 1e-6))
+
+        heading = self.blue_vel[:2]
+        h_norm = float(np.linalg.norm(heading))
+        if h_norm < 1e-6:
+            heading = np.array([1.0, 0.0], dtype=float)
+            h_norm = 1.0
+        h_hat = heading / h_norm
+        side = np.array([-h_hat[1], h_hat[0]], dtype=float)
+        lateral = np.abs(np.dot(rel, side))
+        w_safe = float(np.min(lateral)) if lateral.size > 0 else self.cfg.coop_corridor_ref_width
+        w0 = max(self.cfg.coop_corridor_ref_width, 1e-6)
+        c_cor = 1.0 - np.clip(w_safe / w0, 0.0, 1.0)
+
+        c_enc = self.cfg.coop_c1 * c_ang + self.cfg.coop_c2 * c_syn + self.cfg.coop_c3 * c_cor
+        return float(np.clip(c_enc, 0.0, 1.0))
+
+    def _reward_multi_coop(self, prev_blue_vel: np.ndarray) -> float:
+        idx_active = self._active_missile_indices()
+        if idx_active.size == 0:
+            return self._height_reward(self.blue_pos[2])
+
+        dists = np.linalg.norm(self.missile_pos[idx_active] - self.blue_pos[None, :], axis=1)
+        inv_mean_dist = 1.0 / max(float(np.mean(dists)), 1e-6)
+        distance_reward = self.cfg.multi_distance_weight * inv_mean_dist
+        height_reward = self.cfg.multi_height_weight * self._height_reward(self.blue_pos[2])
+
+        idx_t, ti, tgo = self._compute_threat_scores()
+        threat_mean = float(np.mean(ti)) if ti.size > 0 else 0.0
+        if threat_mean <= self.prev_threat:
+            threat_term = self.cfg.multi_threat_relief_weight * (self.prev_threat - threat_mean)
+        else:
+            threat_term = -self.cfg.multi_threat_increase_weight * (threat_mean - self.prev_threat)
+
+        c_enc = self._compute_collaborative_encirclement(idx_t, tgo)
+        reward = distance_reward + height_reward + threat_term - self.cfg.multi_encirclement_penalty_weight * c_enc
+        reward += self._ground_proximity_penalty(self.blue_pos[2])
+        self.prev_threat = threat_mean
         return float(reward)
 
     def _select_primary_missile(self) -> int | None:
@@ -891,25 +1026,35 @@ class EscapeEnv:
         if threat <= 0.0:
             return
 
-        primitives = action_space.get_simple_list()
-        if len(primitives) < 11:
+        primitives = action_space.get_simple()
+        if primitives.shape[0] < 11:
             return
 
         idx_active = np.where(self.missile_launched & self.missile_alive)[0]
-        roll_sign = 1.0
-        climb = True
-        if idx_active.size > 0:
-            i = idx_active[0]
+        if idx_active.size == 0:
+            return
+        idx_t, ti, tgo = self._compute_threat_scores()
+        if idx_t.size == 0:
+            return
+        logits = self.cfg.threat_softmax_gamma1 * ti + self.cfg.threat_softmax_gamma2 / np.maximum(tgo, 1e-6)
+        logits -= np.max(logits)
+        weights = np.exp(logits)
+        weights /= max(np.sum(weights), 1e-9)
+
+        one_v_one_cmds = []
+        for i in idx_t:
             rel = self.missile_pos[i] - self.blue_pos
             roll_sign = 1.0 if rel[1] >= 0 else -1.0
             climb = rel[2] >= 0
-
-        base_turn = primitives[9] if roll_sign >= 0 else primitives[10]
-        base_vert = primitives[5] if climb else primitives[7]
-
+            base_turn = primitives[9] if roll_sign >= 0 else primitives[10]
+            base_vert = primitives[5] if climb else primitives[7]
+            one_v_one_cmds.append(0.6 * base_turn + 0.4 * base_vert)
+        a_mix = np.sum(weights[:, None] * np.array(one_v_one_cmds), axis=0)
+        # Project mixed continuous command to nearest primitive action.
+        nearest_idx = int(np.argmin(np.linalg.norm(primitives - a_mix[None, :], axis=1)))
+        selected = primitives[nearest_idx]
         steps = max(1, int(self.cfg.threat_maneuver_steps))
-        half = steps // 2
-        sequence = [base_turn] * half + [base_vert] * (steps - half)
+        sequence = [selected] * steps
         self.blue_model.force_actions([np.asarray(a, dtype=float) for a in sequence])
         self.forced_maneuver_steps = steps
 
