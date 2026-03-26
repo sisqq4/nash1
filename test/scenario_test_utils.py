@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import random
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
-import sys
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
 CURRENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CURRENT_DIR.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT) not in os.sys.path:
+    os.sys.path.insert(0, str(REPO_ROOT))
 
 from config import EnvConfig, TrainConfig
 from env.acmi_io import write_acmi
@@ -85,6 +85,108 @@ def _mean_from_group(group: Dict[str, Any], field: str) -> float:
     episodes = max(int(group["episodes"]), 1)
     return float(group[f"{field}_sum"]) / episodes
 
+def _collect_step_diagnostics(env: Any, step: int, time_value: float) -> Dict[str, Any]:
+    idx_active, ti, tgo = env._compute_threat_scores()
+    active_count = int(idx_active.size)
+
+    primary_threat_id = -1
+    primary_threat_score = 0.0
+    if active_count > 0:
+        k = int(np.argmax(ti))
+        primary_threat_id = int(idx_active[k])
+        primary_threat_score = float(ti[k])
+
+    corridor_width = float(env.cfg.coop_corridor_ref_width)
+    encirclement = 0.0
+    if active_count > 0:
+        rel = env.missile_pos[idx_active, :2] - env.blue_pos[None, :2]
+        heading = env.blue_vel[:2]
+        h_norm = float(np.linalg.norm(heading))
+        if h_norm < 1e-6:
+            heading = np.array([1.0, 0.0], dtype=float)
+            h_norm = 1.0
+        h_hat = heading / h_norm
+        side = np.array([-h_hat[1], h_hat[0]], dtype=float)
+        lateral = np.abs(np.dot(rel, side))
+        if lateral.size > 0:
+            corridor_width = float(np.min(lateral))
+        encirclement = float(env._compute_collaborative_encirclement(idx_active, tgo))
+
+    tgo_std = float(np.std(tgo)) if tgo.size > 0 else 0.0
+    tgo_min = float(np.min(tgo)) if tgo.size > 0 else 0.0
+    tgo_max = float(np.max(tgo)) if tgo.size > 0 else 0.0
+
+    return {
+        "step": int(step),
+        "time": float(time_value),
+        "active_missiles": active_count,
+        "primary_threat_id": int(primary_threat_id),
+        "primary_threat_score": float(primary_threat_score),
+        "corridor_width": float(corridor_width),
+        "tgo_std": float(tgo_std),
+        "tgo_min": float(tgo_min),
+        "tgo_max": float(tgo_max),
+        "encirclement": float(encirclement),
+    }
+
+
+def _episode_multi_metrics(step_rows: List[Dict[str, Any]], initial_missiles: int) -> Dict[str, float]:
+    if not step_rows:
+        return {
+            "threat_switch_count": 0.0,
+            "threat_id_jitter_rate": 0.0,
+            "corridor_width_mean": 0.0,
+            "corridor_width_min": 0.0,
+            "corridor_width_trend": 0.0,
+            "tgo_std_mean": 0.0,
+            "tgo_std_max": 0.0,
+            "degrade_to_2_time": -1.0,
+            "degrade_to_1_time": -1.0,
+            "degrade_to_0_time": -1.0,
+        }
+
+    threat_ids = [int(r["primary_threat_id"]) for r in step_rows if int(r["primary_threat_id"]) >= 0]
+    switches = 0
+    for i in range(1, len(threat_ids)):
+        if threat_ids[i] != threat_ids[i - 1]:
+            switches += 1
+
+    n_threat = len(threat_ids)
+    jitter = switches / max(n_threat - 1, 1)
+
+    widths = [float(r["corridor_width"]) for r in step_rows]
+    tgo_std_vals = [float(r["tgo_std"]) for r in step_rows]
+    times = [float(r["time"]) for r in step_rows]
+    active = [int(r["active_missiles"]) for r in step_rows]
+
+    if len(widths) > 1:
+        dt = max(times[-1] - times[0], 1e-6)
+        width_trend = (widths[-1] - widths[0]) / dt
+    else:
+        width_trend = 0.0
+
+    def first_time_at_or_below(target: int) -> float:
+        for row in step_rows:
+            if int(row["active_missiles"]) <= target:
+                return float(row["time"])
+        return -1.0
+
+    deg2 = first_time_at_or_below(2) if initial_missiles >= 3 else -1.0
+    deg1 = first_time_at_or_below(1) if initial_missiles >= 2 else -1.0
+    deg0 = first_time_at_or_below(0)
+
+    return {
+        "threat_switch_count": float(switches),
+        "threat_id_jitter_rate": float(jitter),
+        "corridor_width_mean": float(np.mean(widths)) if widths else 0.0,
+        "corridor_width_min": float(np.min(widths)) if widths else 0.0,
+        "corridor_width_trend": float(width_trend),
+        "tgo_std_mean": float(np.mean(tgo_std_vals)) if tgo_std_vals else 0.0,
+        "tgo_std_max": float(np.max(tgo_std_vals)) if tgo_std_vals else 0.0,
+        "degrade_to_2_time": float(deg2),
+        "degrade_to_1_time": float(deg1),
+        "degrade_to_0_time": float(deg0),
+    }
 
 def run_scenario_sweep(
     checkpoint_path: str,
@@ -96,6 +198,32 @@ def run_scenario_sweep(
     report_interval: int = 10,
     reward_mode: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    # Kept for backward compatibility.
+    rows, _ = run_scenario_sweep_multi_diagnostics(
+        checkpoint_path=checkpoint_path,
+        output_root=output_root,
+        scenarios=scenarios,
+        episodes_per_scenario=episodes_per_scenario,
+        seed=seed,
+        checkpoint_interval=checkpoint_interval,
+        report_interval=report_interval,
+        reward_mode=reward_mode,
+        enable_step_diagnostics=False,
+    )
+    return rows
+
+
+def run_scenario_sweep_multi_diagnostics(
+        checkpoint_path: str,
+        output_root: str,
+        scenarios: Iterable[Dict[str, Any]],
+        episodes_per_scenario: int,
+        seed: int,
+        checkpoint_interval: int = 10,
+        report_interval: int = 10,
+        reward_mode: Optional[str] = None,
+        enable_step_diagnostics: bool = True,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
 
@@ -125,6 +253,7 @@ def run_scenario_sweep(
     agent.q_net.eval()
 
     all_rows: List[Dict[str, Any]] = []
+    step_rows_all: List[Dict[str, Any]] = []
     overall_episode = 0
 
     for scenario_idx, scenario in enumerate(scenarios, start=1):
@@ -154,16 +283,29 @@ def run_scenario_sweep(
             done = False
             info: Optional[Dict[str, Any]] = None
             ep_reward = 0.0
+            step_rows_ep: List[Dict[str, Any]] = []
 
             while not done:
                 action = agent.select_action(obs, eval_mode=True)
                 obs, reward, done, info = env.step(action)
                 ep_reward += reward
 
+                if enable_step_diagnostics:
+                    sd = _collect_step_diagnostics(env, step=env.step_count, time_value=env.time)
+                    sd.update(
+                        {
+                            "scenario_index": scenario_idx,
+                            "scenario_name": scenario_name,
+                            "episode": ep,
+                            "global_episode": overall_episode,
+                        }
+                    )
+                    step_rows_ep.append(sd)
+
             win = is_success(info)
             if win:
                 wins += 1
-
+            mm = _episode_multi_metrics(step_rows_ep, initial_missiles=sc_env_cfg.num_missiles)
             row = {
                 "scenario_index": scenario_idx,
                 "scenario_name": scenario_name,
@@ -185,9 +327,11 @@ def run_scenario_sweep(
                 "hit": int(bool(info.get("hit", False))) if info else 0,
                 "crashed": int(bool(info.get("crashed", False))) if info else 0,
                 "missiles_exhausted": int(bool(info.get("missiles_exhausted", False))) if info else 0,
+                **mm,
             }
             row.update({f"param_{k}": v for k, v in scenario.items() if k != "env_overrides"})
             all_rows.append(row)
+            step_rows_all.extend(step_rows_ep)
 
             if ep % checkpoint_interval == 0:
                 ckpt_name = f"test_checkpoint_ep{ep:04d}.pt"
@@ -216,6 +360,8 @@ def run_scenario_sweep(
     results_dir = os.path.join(output_root, "results")
     os.makedirs(results_dir, exist_ok=True)
     _write_csv(os.path.join(results_dir, "episode_summary.csv"), all_rows)
+    if enable_step_diagnostics:
+        _write_csv(os.path.join(results_dir, "step_diagnostics.csv"), step_rows_all)
 
     grouped: Dict[tuple[int, str], Dict[str, Any]] = {}
     for row in all_rows:
@@ -240,6 +386,16 @@ def run_scenario_sweep(
                 "hit_sum": 0,
                 "crashed_sum": 0,
                 "missiles_exhausted_sum": 0,
+                "threat_switch_count_sum": 0.0,
+                "threat_id_jitter_rate_sum": 0.0,
+                "corridor_width_mean_sum": 0.0,
+                "corridor_width_min_sum": 0.0,
+                "corridor_width_trend_sum": 0.0,
+                "tgo_std_mean_sum": 0.0,
+                "tgo_std_max_sum": 0.0,
+                "degrade_to_2_time_sum": 0.0,
+                "degrade_to_1_time_sum": 0.0,
+                "degrade_to_0_time_sum": 0.0,
             }
         g = grouped[key]
         g["episodes"] += 1
@@ -258,6 +414,16 @@ def run_scenario_sweep(
         g["hit_sum"] += int(row["hit"])
         g["crashed_sum"] += int(row["crashed"])
         g["missiles_exhausted_sum"] += int(row["missiles_exhausted"])
+        g["threat_switch_count_sum"] += float(row["threat_switch_count"])
+        g["threat_id_jitter_rate_sum"] += float(row["threat_id_jitter_rate"])
+        g["corridor_width_mean_sum"] += float(row["corridor_width_mean"])
+        g["corridor_width_min_sum"] += float(row["corridor_width_min"])
+        g["corridor_width_trend_sum"] += float(row["corridor_width_trend"])
+        g["tgo_std_mean_sum"] += float(row["tgo_std_mean"])
+        g["tgo_std_max_sum"] += float(row["tgo_std_max"])
+        g["degrade_to_2_time_sum"] += float(row["degrade_to_2_time"])
+        g["degrade_to_1_time_sum"] += float(row["degrade_to_1_time"])
+        g["degrade_to_0_time_sum"] += float(row["degrade_to_0_time"])
 
     result_rows: List[Dict[str, Any]] = []
     for key in sorted(grouped.keys()):
@@ -283,8 +449,18 @@ def run_scenario_sweep(
                 "avg_altitude": _mean_from_group(g, "avg_altitude"),
                 "avg_roll_abs_deg": _mean_from_group(g, "avg_roll_abs_deg"),
                 "avg_turn_rate_deg": _mean_from_group(g, "avg_turn_rate_deg"),
+                "avg_threat_switch_count": _mean_from_group(g, "threat_switch_count"),
+                "avg_threat_id_jitter_rate": _mean_from_group(g, "threat_id_jitter_rate"),
+                "avg_corridor_width": _mean_from_group(g, "corridor_width_mean"),
+                "avg_min_corridor_width": _mean_from_group(g, "corridor_width_min"),
+                "avg_corridor_width_trend": _mean_from_group(g, "corridor_width_trend"),
+                "avg_tgo_std": _mean_from_group(g, "tgo_std_mean"),
+                "avg_tgo_std_max": _mean_from_group(g, "tgo_std_max"),
+                "avg_degrade_to_2_time": _mean_from_group(g, "degrade_to_2_time"),
+                "avg_degrade_to_1_time": _mean_from_group(g, "degrade_to_1_time"),
+                "avg_degrade_to_0_time": _mean_from_group(g, "degrade_to_0_time"),
             }
         )
     _write_csv(os.path.join(results_dir, "result.csv"), result_rows)
 
-    return all_rows
+    return all_rows, step_rows_all
