@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
+import matplotlib
 
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 CURRENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CURRENT_DIR.parent
 if str(REPO_ROOT) not in os.sys.path:
@@ -80,10 +83,63 @@ def _write_csv(path: str, rows: List[Dict[str, Any]]) -> None:
         writer.writeheader()
         writer.writerows(rows)
 
+def _build_episode_min_dist_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        min_dist_km = float(row.get("min_dist", 0.0))
+        out.append(
+            {
+                "scenario_index": int(row["scenario_index"]),
+                "scenario_name": str(row["scenario_name"]),
+                "episode": int(row["episode"]),
+                "global_episode": int(row["global_episode"]),
+                "episode_seed": int(row["episode_seed"]),
+                "min_dist_km": float(min_dist_km),
+                "min_dist_m": float(min_dist_km * 1000.0),
+            }
+        )
+    return out
 
 def _mean_from_group(group: Dict[str, Any], field: str) -> float:
     episodes = max(int(group["episodes"]), 1)
     return float(group[f"{field}_sum"]) / episodes
+
+def _plot_min_dist_hist_by_scenario(rows: List[Dict[str, Any]], out_dir: str, bin_size_m: float = 1.0) -> None:
+    if not rows:
+        return
+
+    grouped: Dict[tuple[int, str], List[float]] = {}
+    for row in rows:
+        key = (int(row["scenario_index"]), str(row["scenario_name"]))
+        value_m = float(row.get("min_dist", 0.0)) * 1000.0
+        if not np.isfinite(value_m):
+            continue
+        grouped.setdefault(key, []).append(value_m)
+
+    for (scenario_index, scenario_name), values_m in sorted(grouped.items()):
+        if not values_m:
+            continue
+        arr = np.asarray(values_m, dtype=float)
+        x_min = float(np.min(arr))
+        x_max = float(np.max(arr))
+        left = math.floor(x_min / bin_size_m) * bin_size_m
+        right = math.ceil(x_max / bin_size_m) * bin_size_m
+        if right <= left:
+            right = left + bin_size_m
+        bins = np.arange(left, right + bin_size_m, bin_size_m)
+        if bins.size < 2:
+            bins = np.array([left, left + bin_size_m], dtype=float)
+
+        plt.figure(figsize=(9, 5))
+        plt.hist(arr, bins=bins, density=True, alpha=0.8, color="#4C72B0", edgecolor="white")
+        plt.xlabel("Episode minimum missile-target distance (m)")
+        plt.ylabel("Probability density")
+        plt.title(f"Scenario {scenario_index:02d} - {scenario_name}: min_dist distribution (bin=1m)")
+        plt.grid(alpha=0.25, linestyle="--")
+        plt.tight_layout()
+        fig_name = f"hist_min_dist_scenario_{scenario_index:02d}_{scenario_name}.png"
+        plt.savefig(os.path.join(out_dir, fig_name), dpi=180)
+        plt.close()
 
 def _collect_step_diagnostics(env: Any, step: int, time_value: float) -> Dict[str, Any]:
     idx_active, ti, tgo = env._compute_threat_scores()
@@ -360,6 +416,11 @@ def run_scenario_sweep_multi_diagnostics(
     results_dir = os.path.join(output_root, "results")
     os.makedirs(results_dir, exist_ok=True)
     _write_csv(os.path.join(results_dir, "episode_summary.csv"), all_rows)
+    _write_csv(
+        os.path.join(results_dir, "episode_min_dist_all.csv"),
+        _build_episode_min_dist_rows(all_rows),
+    )
+    _plot_min_dist_hist_by_scenario(all_rows, results_dir, bin_size_m=1.0)
     if enable_step_diagnostics:
         _write_csv(os.path.join(results_dir, "step_diagnostics.csv"), step_rows_all)
 
