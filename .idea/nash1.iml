@@ -5,7 +5,7 @@
       <excludeFolder url="file://$MODULE_DIR$/outputs" />
       <excludeFolder url="file://$MODULE_DIR$/test/outputs" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="nash1" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

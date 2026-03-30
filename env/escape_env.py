@@ -477,28 +477,49 @@ class EscapeEnv:
         nav_gains_effective[~guidance_active] = 0.0
 
         # 6) PN update for launched missiles (inner integration at missile_update_dt)
+        #    and finer hit judgement on each missile_update_dt segment.
         idx_launched = np.where(self.missile_launched)[0]
+        hit = False
+        step_min_dist = float("inf")
         if idx_launched.size > 0:
             inner_dt = float(getattr(self.cfg, "missile_update_dt", dt))
             if inner_dt <= 0.0:
                 inner_dt = dt
             substeps = max(1, int(round(dt / inner_dt)))
             missile_dt = dt / substeps
+            blue_pos_delta = self.blue_pos - prev_blue_pos
+            blue_vel_delta = self.blue_vel - prev_blue_vel
             original_missile_dt = self.missile_model.dt
             self.missile_model.dt = missile_dt
             try:
-                for _ in range(substeps):
+                for sub_idx in range(substeps):
+                    sub_prev_missile_pos = self.missile_pos.copy()
+                    frac0 = sub_idx / substeps
+                    frac1 = (sub_idx + 1) / substeps
+                    blue_sub_start = prev_blue_pos + frac0 * blue_pos_delta
+                    blue_sub_end = prev_blue_pos + frac1 * blue_pos_delta
+                    blue_sub_vel = prev_blue_vel + frac1 * blue_vel_delta
                     sub_pos, sub_vel = self.missile_model.step(
                         self.missile_pos[idx_launched],
                         self.missile_vel[idx_launched],
                         self.missile_speed[idx_launched],
-                        self.blue_pos,
-                        self.blue_vel,
+                        blue_sub_end,
+                        blue_sub_vel,
                         nav_gains_effective[idx_launched],
                         max_overload_g=max_overload[idx_launched],
                     )
                     self.missile_pos[idx_launched] = sub_pos
                     self.missile_vel[idx_launched] = sub_vel
+                    sub_hit, sub_min_dist = self._check_hits_between_states(
+                        blue_start=blue_sub_start,
+                        blue_end=blue_sub_end,
+                        missile_start=sub_prev_missile_pos,
+                        missile_end=self.missile_pos,
+                    )
+                    step_min_dist = min(step_min_dist, sub_min_dist)
+                    if sub_hit:
+                        hit = True
+                        break
             finally:
                 self.missile_model.dt = original_missile_dt
 
@@ -524,7 +545,8 @@ class EscapeEnv:
             self._log_current_state(prev_blue_vel=prev_blue_vel, prev_missile_vel=prev_missile_vel)
 
         # 9) Hit detection (line-segment / sphere)
-        hit, step_min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
+        if not np.isfinite(step_min_dist):
+            hit, step_min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
         # Episode-level global minimum missile-target distance:
         # per step, compute all missile distances and keep the smallest seen so far.
         all_missile_dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
@@ -1099,14 +1121,28 @@ class EscapeEnv:
         prev_blue_pos: np.ndarray,
         prev_missile_pos: np.ndarray,
     ) -> Tuple[bool, float]:
+        return self._check_hits_between_states(
+            blue_start=prev_blue_pos,
+            blue_end=self.blue_pos,
+            missile_start=prev_missile_pos,
+            missile_end=self.missile_pos,
+        )
+
+    def _check_hits_between_states(
+        self,
+        blue_start: np.ndarray,
+        blue_end: np.ndarray,
+        missile_start: np.ndarray,
+        missile_end: np.ndarray,
+    ) -> Tuple[bool, float]:
         hit_any = False
         min_dist = float("inf")
 
         for i in range(self.cfg.num_missiles):
             if not self.missile_launched[i]:
                 continue
-            r0 = prev_missile_pos[i] - prev_blue_pos
-            r1 = self.missile_pos[i] - self.blue_pos
+            r0 = missile_start[i] - blue_start
+            r1 = missile_end[i] - blue_end
             hit, dist = self._segment_sphere_hit(r0, r1, self.cfg.hit_radius)
             if dist < min_dist:
                 min_dist = dist

@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260326_105033_1v3")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=500)
+    parser.add_argument("--episodes-per-scenario", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default="multi_coop")
     return parser.parse_args()
@@ -50,6 +50,7 @@ def _build_scenarios() -> list[dict[str, object]]:
         "blue_y_max": 0.0,
         "blue_z_min": 10.0,
         "blue_z_max": 10.0,
+        "hit_radius": 0.003,
     }
     return [
         {

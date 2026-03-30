@@ -21,10 +21,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=300)
+    parser.add_argument("--episodes-per-scenario", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
-    parser.add_argument("--heading-jitter-deg", type=float, default=30.0, help="每个方向场景的初始航向扰动范围(±度)")
+    parser.add_argument("--heading-jitter-deg", type=float, default=20.0, help="每个方向场景的初始航向扰动范围(±度)")
     parser.add_argument("--distance-jitter-km", type=float, default=0.0, help="初始距离扰动范围(±km)")
     parser.add_argument("--lateral-jitter-km", type=float, default=0.3, help="初始横向扰动范围(±km)")
     parser.add_argument("--min-distance-km", type=int, default=6)
@@ -136,6 +136,7 @@ def main() -> None:
                 "red_launch_z_min": 10.0,
                 "red_launch_z_max": 10.0,
                 "missile_update_dt": 0.01,
+                "hit_radius": 0.003,
             },
         }
         for distance in distances

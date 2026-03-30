@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=300)
+    parser.add_argument("--episodes-per-scenario", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
     parser.add_argument("--min-distance-km", type=int, default=6)
@@ -118,6 +118,7 @@ def main() -> None:
                         "red_launch_z_max": 10.0,
                         "missile_update_dt": 0.01,
                         "blue_accel": g_to_kmps2(overload_g),
+                        "hit_radius": 0.003,
                     },
                 }
             )
