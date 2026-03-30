@@ -298,15 +298,7 @@ def run_scenario_sweep_multi_diagnostics(
     with open(os.path.join(output_root, "config.json"), "w", encoding="utf-8") as f:
         json.dump({"env": asdict(env_cfg), "train": asdict(train_cfg)}, f, ensure_ascii=False, indent=2)
 
-    env, agent = make_env_and_agent(env_cfg, train_cfg, seed=seed)
-    # NOTE:
-    #   For evaluation we intentionally do NOT load red state from checkpoint.
-    #   Checkpoints are saved at episode end; red nav_gains in that snapshot may be
-    #   terminal values (e.g., zero after missiles expire), which would disable PN
-    #   in later tests. We keep red parameters from env_cfg/config.json so red uses
-    #   the same PN/drag/speed model settings as training-time configuration.
-    load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
-    agent.q_net.eval()
+    agent = None
 
     all_rows: List[Dict[str, Any]] = []
     step_rows_all: List[Dict[str, Any]] = []
@@ -326,8 +318,21 @@ def run_scenario_sweep_multi_diagnostics(
         sc_env_cfg.save_dir = scenario_dir
         sc_env_cfg.log_trajectories = True
 
-        env, _ = make_env_and_agent(sc_env_cfg, train_cfg, seed=seed + scenario_idx)
+        env, scenario_agent = make_env_and_agent(sc_env_cfg, train_cfg, seed=seed + scenario_idx)
+        if (
+            agent is None
+            or agent.cfg.obs_dim != scenario_agent.cfg.obs_dim
+            or agent.cfg.action_dim != scenario_agent.cfg.action_dim
+        ):
+            agent = scenario_agent
+        # NOTE:
+        #   For evaluation we intentionally do NOT load red state from checkpoint.
+        #   Checkpoints are saved at episode end; red nav_gains in that snapshot may be
+        #   terminal values (e.g., zero after missiles expire), which would disable PN
+        #   in later tests. We keep red parameters from env_cfg/config.json so red uses
+        #   the same PN/drag/speed model settings as training-time configuration.
         load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
+        agent.q_net.eval()
 
         wins = 0
         for ep in range(1, episodes_per_scenario + 1):
