@@ -86,6 +86,7 @@ class EscapeEnv:
         self.done = False
         self.prev_threat = 1.0
         self.prev_min_dist = cfg.region_span
+        self.episode_min_dist = cfg.region_span
         self.prev_blue_vel = np.zeros(3, dtype=float)
         self.initial_missile_distances = np.zeros(M, dtype=float)
         self.forced_maneuver_steps = 0
@@ -207,7 +208,11 @@ class EscapeEnv:
             self.missile_pos - self.blue_pos[None, :],
             axis=1,
         )
-        self.prev_min_dist = float(np.min(self.initial_missile_distances))
+        if self.initial_missile_distances.size > 0:
+            self.prev_min_dist = float(np.min(self.initial_missile_distances))
+        else:
+            self.prev_min_dist = float(self.cfg.region_span)
+        self.episode_min_dist = float(self.prev_min_dist)
         self.prev_blue_vel = self.blue_vel.copy()
         self._episode_speed_sum = 0.0
         self._episode_speed_count = 0
@@ -519,7 +524,14 @@ class EscapeEnv:
             self._log_current_state(prev_blue_vel=prev_blue_vel, prev_missile_vel=prev_missile_vel)
 
         # 9) Hit detection (line-segment / sphere)
-        hit, min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
+        hit, step_min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
+        # Episode-level global minimum missile-target distance:
+        # per step, compute all missile distances and keep the smallest seen so far.
+        all_missile_dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
+        if all_missile_dists.size > 0:
+            step_min_dist = float(min(step_min_dist, float(np.min(all_missile_dists))))
+        self.episode_min_dist = float(min(self.episode_min_dist, step_min_dist))
+        min_dist = float(self.episode_min_dist)
         turn_rate_deg = self._compute_turn_rate_deg(prev_blue_vel)
         self._update_episode_stats(turn_rate_deg=turn_rate_deg)
 
@@ -540,7 +552,9 @@ class EscapeEnv:
             reward = 100.0
             self.done = True
         else:
-            reward = self._compute_reward(min_dist, prev_blue_vel)
+            # Keep reward shaping based on current-step tactical distance,
+            # while reporting min_dist as episode-global minimum for statistics.
+            reward = self._compute_reward(step_min_dist, prev_blue_vel)
 
         if self.done and self.log_enabled:
             self._flush_logs_to_csv()
@@ -550,6 +564,7 @@ class EscapeEnv:
             "time": float(self.time),
             "step": int(self.step_count),
             "min_dist": float(min_dist),
+            "step_min_dist": float(step_min_dist),
             "final_dist": self._compute_final_dist(),
             "final_speed": float(np.linalg.norm(self.blue_vel)),
             "avg_speed": self._episode_speed_sum / max(self._episode_speed_count, 1),
