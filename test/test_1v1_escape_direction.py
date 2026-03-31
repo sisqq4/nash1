@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lateral-jitter-km", type=float, default=0.3, help="初始横向扰动范围(±km)")
     parser.add_argument("--min-distance-km", type=int, default=6)
     parser.add_argument("--max-distance-km", type=int, default=30)
-    parser.add_argument("--distance-step-km", type=int, default=3)
+    parser.add_argument("--distance-step-km", type=int, default=2)
     parser.add_argument("--angle-step-deg", type=int, default=90)
     return parser.parse_args()
 
@@ -114,7 +114,7 @@ def main() -> None:
     d_jitter = max(0.0, float(args.distance_jitter_km))
     y_jitter = max(0.0, float(args.lateral_jitter_km))
     distances = list(range(args.min_distance_km, args.max_distance_km + 1, args.distance_step_km))
-    angles = list(range(0, 361, args.angle_step_deg))
+    angles = [angle for angle in range(0, 361, args.angle_step_deg) if angle != 360]
     scenarios = [
         {
             "scenario_name": f"d{distance:02d}_h{angle:03d}",
