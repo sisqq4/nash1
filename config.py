@@ -175,6 +175,21 @@ class EnvConfig:
     coop_tau_t: float = 8.0
     coop_corridor_ref_width: float = 2.0
 
+    # Red missile time-coordination strategy (none | strategy1)
+    missile_coordination_strategy: str = "none"
+    missile_coordination_gain: float = 1.2
+    missile_coordination_gain_decay: float = 0.15
+    missile_coordination_max_bias_accel: float = 0.12  # km/s^2
+    missile_strategy1_wave_sync_tol: float = 0.2  # [s], <= means same wave
+    missile_strategy1_trec: float = 6.0  # [s], target minimum recovery time
+    missile_strategy1_w_star: float = 1.0  # [s], desired compressed impact-time window
+    missile_strategy1_wave_gap_nominal: float = 0.8  # [s], nominal gap between adjacent waves
+    missile_strategy1_topology: str = "all_to_all"  # all_to_all | ring
+    missile_strategy1_tgo_alpha: float = 0.7  # blend ratio for dynamic tgo filter
+    missile_coordination_activation_tau: float = 0.4  # [s], first-order smoothing time constant
+    missile_coordination_bias_rate_limit: float = 0.5  # [km/s^3], bias slew-rate limit
+    missile_coordination_min_closing_ratio: float = 0.5  # smooth gate when few missiles are closing
+
     # Threat score Ti = sigma(b1*(1/ri)+b2*max(0,-r_dot_i)+b3*(1/tgo_i)+b4*|q_i|+b5*xi_M_i)
     threat_b1: float = 1.0
     threat_b2: float = 1.2

@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default="multi_coop")
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
+    parser.add_argument("--red-coordination-strategy", type=str, choices=["none", "strategy1"], default="none")
     return parser.parse_args()
 
 
@@ -41,7 +42,7 @@ def _write_csv(path: Path, rows: list[dict[str, float]]) -> None:
         writer.writerows(rows)
 
 
-def _build_scenarios() -> list[dict[str, object]]:
+def _build_scenarios(red_coordination_strategy: str) -> list[dict[str, object]]:
     base = {
         "num_missiles": 3,
         "missile_update_dt": 0.01,
@@ -51,6 +52,7 @@ def _build_scenarios() -> list[dict[str, object]]:
         "blue_y_max": 0.0,
         "blue_z_min": 10.0,
         "blue_z_max": 10.0,
+        "missile_coordination_strategy": red_coordination_strategy,
     }
     return [
         {
@@ -130,7 +132,7 @@ def main() -> None:
         checkpoint_name=args.checkpoint_name,
     )
 
-    scenarios = _build_scenarios()
+    scenarios = _build_scenarios(args.red_coordination_strategy)
     all_rows, step_rows = run_scenario_sweep_multi_diagnostics(
         checkpoint_path=checkpoint_path,
         output_root=str(Path("outputs") / "tests_1v3_coordination"),
@@ -151,6 +153,9 @@ def main() -> None:
             "win", "reward", "steps", "min_dist", "final_dist", "avg_speed", "hit", "timeout", "crashed", "missiles_exhausted",
             "threat_switch_count", "threat_id_jitter_rate", "corridor_width_mean", "corridor_width_min", "corridor_width_trend",
             "tgo_std_mean", "tgo_std_max", "degrade_to_2_time", "degrade_to_1_time", "degrade_to_0_time",
+            "coord_window_mean", "coord_window_min", "coord_window_error_mean", "coord_window_trend_mean",
+            "coord_gain_scale_mean", "coord_activation_mean", "coord_intra_wave_error_mean",
+            "coord_inter_wave_gap_error_mean", "coord_target_met_rate", "coord_target_met_time",
         ]:
             grouped[key][k].append(float(row[k]))
 
@@ -181,6 +186,16 @@ def main() -> None:
                 "avg_degrade_to_2_time": _mean(vals["degrade_to_2_time"]),
                 "avg_degrade_to_1_time": _mean(vals["degrade_to_1_time"]),
                 "avg_degrade_to_0_time": _mean(vals["degrade_to_0_time"]),
+                "avg_coord_window_mean": _mean(vals["coord_window_mean"]),
+                "avg_coord_window_min": _mean(vals["coord_window_min"]),
+                "avg_coord_window_error_mean": _mean(vals["coord_window_error_mean"]),
+                "avg_coord_window_trend_mean": _mean(vals["coord_window_trend_mean"]),
+                "avg_coord_gain_scale_mean": _mean(vals["coord_gain_scale_mean"]),
+                "avg_coord_activation_mean": _mean(vals["coord_activation_mean"]),
+                "avg_coord_intra_wave_error_mean": _mean(vals["coord_intra_wave_error_mean"]),
+                "avg_coord_inter_wave_gap_error_mean": _mean(vals["coord_inter_wave_gap_error_mean"]),
+                "avg_coord_target_met_rate": _mean(vals["coord_target_met_rate"]),
+                "avg_coord_target_met_time": _mean(vals["coord_target_met_time"]),
             }
         )
 
