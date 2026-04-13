@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes-per-scenario", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
+    parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
     parser.add_argument("--min-distance-km", type=int, default=6)
     parser.add_argument("--max-distance-km", type=int, default=9)
     parser.add_argument("--distance-step-km", type=int, default=1)
@@ -116,6 +117,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
+        blue_eval_policy=args.blue_eval_policy,
     )
 
     grouped: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))

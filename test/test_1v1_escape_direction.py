@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes-per-scenario", type=int, default=300)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
+    parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
     parser.add_argument("--heading-jitter-deg", type=float, default=30.0, help="每个方向场景的初始航向扰动范围(±度)")
     parser.add_argument("--distance-jitter-km", type=float, default=0.0, help="初始距离扰动范围(±km)")
     parser.add_argument("--lateral-jitter-km", type=float, default=0.3, help="初始横向扰动范围(±km)")
@@ -151,6 +152,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
+        blue_eval_policy=args.blue_eval_policy,
     )
 
     grouped: dict[tuple[int, int], dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))

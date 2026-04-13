@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in os.sys.path:
     os.sys.path.insert(0, str(REPO_ROOT))
 
 from config import EnvConfig, TrainConfig
+from agent.blue_bt_agent import BlueBTAgent, MissileSnapshot, PlaneSnapshot
 from env.acmi_io import write_acmi
 from train_blue_agent import load_checkpoint, make_env_and_agent, save_checkpoint
 
@@ -244,6 +245,41 @@ def _episode_multi_metrics(step_rows: List[Dict[str, Any]], initial_missiles: in
         "degrade_to_0_time": float(deg0),
     }
 
+def _build_bt_inputs(env: Any, bt_team: int) -> Tuple[PlaneSnapshot, List[MissileSnapshot]]:
+    roll_rad = float(env.blue_model.roll_rad or 0.0)
+    plane = PlaneSnapshot(
+        pos=env.blue_pos.copy(),
+        vel=env.blue_vel.copy(),
+        roll_rad=roll_rad,
+    )
+    missiles: List[MissileSnapshot] = []
+    for idx in range(env.cfg.num_missiles):
+        missiles.append(
+            MissileSnapshot(
+                pos=env.missile_pos[idx].copy(),
+                team=1 - bt_team,
+                is_active=bool(env.missile_alive[idx] and env.missile_launched[idx]),
+            )
+        )
+    return plane, missiles
+
+
+def _select_eval_action(
+    policy_name: str,
+    obs: np.ndarray,
+    env: Any,
+    agent: Any,
+    bt_agent: Optional[BlueBTAgent],
+) -> int:
+    if policy_name == "dqn":
+        return int(agent.select_action(obs, eval_mode=True))
+    if policy_name == "bt":
+        if bt_agent is None:
+            raise ValueError("blue_eval_policy=bt 时 bt_agent 不能为空。")
+        plane, missiles = _build_bt_inputs(env, bt_team=0)
+        return int(bt_agent.get_action(plane, missiles, enemies=[]))
+    raise ValueError(f"未知 blue_eval_policy: {policy_name}")
+
 def run_scenario_sweep(
     checkpoint_path: str,
     output_root: str,
@@ -253,6 +289,7 @@ def run_scenario_sweep(
     checkpoint_interval: int = 10,
     report_interval: int = 10,
     reward_mode: Optional[str] = None,
+    blue_eval_policy: str = "dqn",
 ) -> List[Dict[str, Any]]:
     # Kept for backward compatibility.
     rows, _ = run_scenario_sweep_multi_diagnostics(
@@ -265,6 +302,7 @@ def run_scenario_sweep(
         report_interval=report_interval,
         reward_mode=reward_mode,
         enable_step_diagnostics=False,
+        blue_eval_policy=blue_eval_policy,
     )
     return rows
 
@@ -279,6 +317,7 @@ def run_scenario_sweep_multi_diagnostics(
         report_interval: int = 10,
         reward_mode: Optional[str] = None,
         enable_step_diagnostics: bool = True,
+        blue_eval_policy: str = "dqn",
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     env_cfg = EnvConfig()
     train_cfg = TrainConfig()
@@ -307,6 +346,8 @@ def run_scenario_sweep_multi_diagnostics(
     #   the same PN/drag/speed model settings as training-time configuration.
     load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
     agent.q_net.eval()
+    policy_name = str(blue_eval_policy).strip().lower()
+    bt_agent = BlueBTAgent(uid="blue_eval_bt", team=0) if policy_name == "bt" else None
 
     all_rows: List[Dict[str, Any]] = []
     step_rows_all: List[Dict[str, Any]] = []
@@ -336,13 +377,22 @@ def run_scenario_sweep_multi_diagnostics(
             env.rng = np.random.default_rng(episode_seed)
             env.launcher.rng = env.rng
             obs = env.reset()
+            if bt_agent is not None:
+                init_state = np.concatenate((env.blue_pos, env.blue_vel))
+                bt_agent.reset(init_state)
             done = False
             info: Optional[Dict[str, Any]] = None
             ep_reward = 0.0
             step_rows_ep: List[Dict[str, Any]] = []
 
             while not done:
-                action = agent.select_action(obs, eval_mode=True)
+                action = _select_eval_action(
+                    policy_name=policy_name,
+                    obs=obs,
+                    env=env,
+                    agent=agent,
+                    bt_agent=bt_agent,
+                )
                 obs, reward, done, info = env.step(action)
                 ep_reward += reward
 

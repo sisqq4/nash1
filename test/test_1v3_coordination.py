@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes-per-scenario", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default="multi_coop")
+    parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
     return parser.parse_args()
 
 
@@ -139,6 +140,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
+        blue_eval_policy=args.blue_eval_policy,
         enable_step_diagnostics=True,
     )
 
