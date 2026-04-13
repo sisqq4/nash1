@@ -94,6 +94,7 @@ def update_missiles_pn(
     dt: float,
     nav_gain,
     max_overload_g: float | np.ndarray | None = None,
+    coordination_bias: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Proportional-navigation-like update for a batch of missiles.
 
@@ -106,6 +107,7 @@ def update_missiles_pn(
         dt: [s]
         nav_gain: scalar or shape (M,) PN navigation constant N (dimensionless)
         max_overload_g: optional max lateral load factor [g]
+        coordination_bias: optional additive acceleration bias (M,3) [km/s^2]
     """
     g0_km_s2 = 9.80665 / 1000.0
     M = missile_pos.shape[0]
@@ -132,6 +134,11 @@ def update_missiles_pn(
             max_g_array = np.full(M, float(max_g_array))
         else:
             assert max_g_array.shape[0] == M, "max_overload_g array must have shape (M,)"
+
+    bias_array = None
+    if coordination_bias is not None:
+        bias_array = np.asarray(coordination_bias, dtype=float)
+        assert bias_array.shape == (M, 3), "coordination_bias must have shape (M, 3)"
 
     for i in range(M):
         p = new_pos[i]
@@ -165,6 +172,8 @@ def update_missiles_pn(
         if closing_speed > 0.0 and N_gain != 0.0:
             # Standard 3D PN command: a_n = N * Vc * (omega_LOS x u_m)
             a_cmd = N_gain * closing_speed * np.cross(los_omega, u)
+            if bias_array is not None:
+                a_cmd = a_cmd + bias_array[i]
             u_dot = a_cmd / max(speed, 1e-6)
             delta_u = u_dot * dt
             if max_g is not None and max_g > 0.0 and speed > 1e-6:

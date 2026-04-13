@@ -77,6 +77,20 @@ class EscapeEnv:
         self.missile_fov_in_view = np.zeros(M, dtype=bool)
         self.missile_is_closing = np.zeros(M, dtype=bool)
         self.missile_closing_speed = np.zeros(M, dtype=float)
+        self.missile_tgo_hat = np.full(M, np.inf, dtype=float)
+        self.missile_prev_r = np.full(M, np.nan, dtype=float)
+        self.missile_prev_rdot = np.full(M, np.nan, dtype=float)
+        self.missile_wave_index = np.zeros(M, dtype=int)
+        self.coordination_window_est = np.inf
+        self.coordination_window_error = np.inf
+        self.coordination_gain_scale = 0.0
+        self.coordination_activation = 0.0
+        self.coordination_window_trend = 0.0
+        self.coordination_intra_wave_error = np.inf
+        self.coordination_inter_wave_gap_error = np.inf
+        self.coordination_target_met = False
+        self.coordination_target_met_time = -1.0
+        self.prev_coordination_bias = np.zeros((M, 3), dtype=float)
         self._prev_missile_fov_in_view = np.zeros(M, dtype=bool)
         self._prev_missile_is_closing = np.zeros(M, dtype=bool)
         self._guidance_events: List[Dict[str, Any]] = []
@@ -198,6 +212,20 @@ class EscapeEnv:
         self.missile_fov_in_view[:] = False
         self.missile_is_closing[:] = False
         self.missile_closing_speed[:] = 0.0
+        self.missile_tgo_hat[:] = np.inf
+        self.missile_prev_r[:] = np.nan
+        self.missile_prev_rdot[:] = np.nan
+        self.missile_wave_index[:] = 0
+        self.coordination_window_est = np.inf
+        self.coordination_window_error = np.inf
+        self.coordination_gain_scale = 0.0
+        self.coordination_activation = 0.0
+        self.coordination_window_trend = 0.0
+        self.coordination_intra_wave_error = np.inf
+        self.coordination_inter_wave_gap_error = np.inf
+        self.coordination_target_met = False
+        self.coordination_target_met_time = -1.0
+        self.prev_coordination_bias.fill(0.0)
         self._prev_missile_fov_in_view[:] = False
         self._prev_missile_is_closing[:] = False
         self._guidance_events = []
@@ -318,6 +346,17 @@ class EscapeEnv:
                 self.missile_is_boosting[i] = True
                 self.missile_fuel_depleted[i] = False
                 self.missile_seeker_lost_time[i] = 0.0
+                rel0 = self.blue_pos - self.missile_pos[i]
+                rel0_norm = float(np.linalg.norm(rel0))
+                self.missile_prev_r[i] = rel0_norm
+                if rel0_norm > 1e-6:
+                    los0 = rel0 / rel0_norm
+                    rel_v0 = self.blue_vel - self.missile_vel[i]
+                    self.missile_prev_rdot[i] = float(np.dot(rel_v0, los0))
+                    if self.missile_prev_rdot[i] < -1e-6:
+                        self.missile_tgo_hat[i] = -rel0_norm / self.missile_prev_rdot[i]
+                    else:
+                        self.missile_tgo_hat[i] = np.inf
 
         # 3) Seeker constraints (FOV, memory, terminal blind zone)
         guidance_active = np.zeros(self.cfg.num_missiles, dtype=bool)
@@ -491,6 +530,10 @@ class EscapeEnv:
             self.missile_model.dt = missile_dt
             try:
                 for sub_idx in range(substeps):
+                    coordination_bias = self._compute_coordination_bias(
+                        guidance_active=guidance_active,
+                        missile_dt=missile_dt,
+                    )
                     sub_prev_missile_pos = self.missile_pos.copy()
                     sub_pos, sub_vel = self.missile_model.step(
                         self.missile_pos[idx_launched],
@@ -500,6 +543,7 @@ class EscapeEnv:
                         self.blue_vel,
                         nav_gains_effective[idx_launched],
                         max_overload_g=max_overload[idx_launched],
+                        coordination_bias=coordination_bias[idx_launched],
                     )
                     self.missile_pos[idx_launched] = sub_pos
                     self.missile_vel[idx_launched] = sub_vel
@@ -537,6 +581,9 @@ class EscapeEnv:
                 self.missile_vel[i] = 0.0
                 self.missile_speed[i] = 0.0
                 self.missile_is_boosting[i] = False
+        inactive_mask = ~(self.missile_launched & self.missile_alive)
+        self.missile_tgo_hat[inactive_mask] = np.inf
+        self.missile_prev_rdot[inactive_mask] = np.nan
 
         if self.log_enabled:
             self._log_current_state(prev_blue_vel=prev_blue_vel, prev_missile_vel=prev_missile_vel)
@@ -605,6 +652,21 @@ class EscapeEnv:
             "missile_is_closing": self.missile_is_closing.copy(),
             "missile_closing_speed": self.missile_closing_speed.copy(),
             "guidance_events": list(self._guidance_events),
+            "missile_coordination_strategy": str(self.cfg.missile_coordination_strategy),
+            "coordination_window_est": float(self.coordination_window_est),
+            "coordination_window_ratio": float(
+                self.coordination_window_est / max(float(self.cfg.missile_strategy1_trec), 1e-6)
+            ) if np.isfinite(self.coordination_window_est) else float("inf"),
+            "coordination_window_error": float(self.coordination_window_error),
+            "coordination_gain_scale": float(self.coordination_gain_scale),
+            "coordination_activation": float(self.coordination_activation),
+            "coordination_window_trend": float(self.coordination_window_trend),
+            "coordination_intra_wave_error": float(self.coordination_intra_wave_error),
+            "coordination_inter_wave_gap_error": float(self.coordination_inter_wave_gap_error),
+            "coordination_target_met": bool(self.coordination_target_met),
+            "coordination_target_met_time": float(self.coordination_target_met_time),
+            "missile_tgo_hat": self.missile_tgo_hat.copy(),
+            "missile_wave_index": self.missile_wave_index.copy(),
         }
         return obs, float(reward), bool(self.done), info
 
@@ -748,6 +810,318 @@ class EscapeEnv:
 
     def _active_missile_indices(self) -> np.ndarray:
         return np.where(self.missile_launched & self.missile_alive)[0]
+
+    def _build_coordination_adjacency(self, n: int) -> np.ndarray:
+        if n <= 0:
+            return np.zeros((0, 0), dtype=float)
+        topology = str(self.cfg.missile_strategy1_topology).lower()
+        if topology == "ring" and n > 2:
+            a = np.zeros((n, n), dtype=float)
+            for i in range(n):
+                a[i, (i - 1) % n] = 1.0
+                a[i, (i + 1) % n] = 1.0
+            return a
+        return np.ones((n, n), dtype=float) - np.eye(n, dtype=float)
+
+    def _estimate_dynamic_tgo(self, idx: np.ndarray, rel: np.ndarray, rel_vel: np.ndarray, missile_dt: float) -> np.ndarray:
+        tgo = np.full(idx.shape[0], np.inf, dtype=float)
+        dt_safe = max(float(missile_dt), 1e-4)
+        alpha = float(np.clip(self.cfg.missile_strategy1_tgo_alpha, 0.0, 1.0))
+        max_tgo = max(float(self.cfg.missile_max_flight_time), 1.0)
+
+        for k, missile_id in enumerate(idx):
+            r_vec = rel[k]
+            r = float(np.linalg.norm(r_vec))
+            if r < 1e-6:
+                self.missile_tgo_hat[missile_id] = 0.0
+                self.missile_prev_r[missile_id] = 0.0
+                self.missile_prev_rdot[missile_id] = 0.0
+                tgo[k] = 0.0
+                continue
+
+            los = r_vec / r
+            r_dot = float(np.dot(rel_vel[k], los))
+            prev_rdot = self.missile_prev_rdot[missile_id]
+            prev_tgo = self.missile_tgo_hat[missile_id]
+            if np.isfinite(prev_rdot):
+                r_ddot = (r_dot - prev_rdot) / dt_safe
+            else:
+                r_ddot = 0.0
+
+            # 严格TGO近似：求解 r + r_dot*t + 0.5*r_ddot*t^2 = 0 的最小正根。
+            a = 0.5 * r_ddot
+            b = r_dot
+            c = r
+            tgo_static = max_tgo
+            if abs(a) < 1e-8:
+                if b < -1e-6:
+                    tgo_static = -c / b
+            else:
+                disc = b * b - 4.0 * a * c
+                if disc >= 0.0:
+                    root = math.sqrt(disc)
+                    candidates = [(-b - root) / (2.0 * a), (-b + root) / (2.0 * a)]
+                    positive = [x for x in candidates if x > 0.0]
+                    if positive:
+                        tgo_static = min(positive)
+
+            if np.isfinite(prev_rdot) and np.isfinite(prev_tgo):
+                denom = max(r_dot * r_dot, 1e-8)
+                tgo_dot = -((r_dot * r_dot) - r * r_ddot) / denom
+                tgo_dyn = prev_tgo + tgo_dot * dt_safe
+                tgo_est = alpha * tgo_dyn + (1.0 - alpha) * tgo_static
+            else:
+                tgo_est = tgo_static
+
+            tgo_est = float(np.clip(tgo_est, 0.0, max_tgo))
+            self.missile_tgo_hat[missile_id] = tgo_est
+            self.missile_prev_r[missile_id] = r
+            self.missile_prev_rdot[missile_id] = r_dot
+            tgo[k] = tgo_est
+        return tgo
+
+    def _compute_wave_cumulative_offsets(
+        self,
+        launch_offsets: np.ndarray,
+        wave_index: np.ndarray,
+    ) -> np.ndarray:
+        if launch_offsets.size == 0:
+            return np.zeros(0, dtype=float)
+        unique_waves = np.unique(wave_index.astype(int))
+        if unique_waves.size <= 1:
+            return np.zeros_like(launch_offsets, dtype=float)
+
+        wave_means = {}
+        for w in unique_waves:
+            mask = wave_index == w
+            wave_means[int(w)] = float(np.mean(launch_offsets[mask]))
+        sorted_waves = sorted(unique_waves.tolist())
+
+        delta_map: dict[int, float] = {}
+        nominal = max(float(self.cfg.missile_strategy1_wave_gap_nominal), 1e-6)
+        for i in range(len(sorted_waves) - 1):
+            w0 = int(sorted_waves[i])
+            w1 = int(sorted_waves[i + 1])
+            delta = wave_means[w1] - wave_means[w0]
+            delta_map[w0] = float(max(delta, nominal))
+
+        cumulative_map: dict[int, float] = {}
+        running = 0.0
+        cumulative_map[int(sorted_waves[0])] = 0.0
+        for i in range(len(sorted_waves) - 1):
+            w0 = int(sorted_waves[i])
+            w1 = int(sorted_waves[i + 1])
+            running += delta_map[w0]
+            cumulative_map[w1] = running
+
+        offsets = np.zeros_like(launch_offsets, dtype=float)
+        for k, w in enumerate(wave_index.astype(int)):
+            offsets[k] = cumulative_map.get(int(w), 0.0)
+        return offsets
+
+    def _compute_window_feedback_scale(self, t_f: np.ndarray) -> float:
+        finite_tf = t_f[np.isfinite(t_f)]
+        if finite_tf.size <= 1:
+            self.coordination_window_est = np.inf
+            self.coordination_window_error = np.inf
+            self.coordination_gain_scale = 0.0
+            return 0.0
+
+        window = float(np.max(finite_tf) - np.min(finite_tf))
+        w_star = max(float(self.cfg.missile_strategy1_w_star), 0.0)
+        t_rec = max(float(self.cfg.missile_strategy1_trec), 1e-6)
+        error = window - w_star
+        scale = max(error, 0.0) / max(t_rec, 1e-6)
+        scale = float(np.clip(scale, 0.0, 2.0))
+
+        self.coordination_window_est = window
+        self.coordination_window_error = error
+        self.coordination_gain_scale = scale
+        return scale
+
+    def _smooth_activation(self, target: float, missile_dt: float) -> float:
+        tau = max(float(self.cfg.missile_coordination_activation_tau), 1e-3)
+        alpha = np.clip(float(missile_dt) / tau, 0.0, 1.0)
+        self.coordination_activation = float(
+            self.coordination_activation + alpha * (float(target) - self.coordination_activation)
+        )
+        return self.coordination_activation
+
+    def _update_coordination_diagnostics(
+        self,
+        t_f: np.ndarray,
+        wave_index: np.ndarray,
+        missile_dt: float,
+    ) -> None:
+        finite_tf = t_f[np.isfinite(t_f)]
+        prev_window = self.coordination_window_est
+        if finite_tf.size <= 1:
+            self.coordination_window_trend = 0.0
+            self.coordination_intra_wave_error = np.inf
+            self.coordination_inter_wave_gap_error = np.inf
+            return
+
+        window = float(np.max(finite_tf) - np.min(finite_tf))
+        dt_safe = max(float(missile_dt), 1e-4)
+        if np.isfinite(prev_window):
+            self.coordination_window_trend = float((window - prev_window) / dt_safe)
+        else:
+            self.coordination_window_trend = 0.0
+
+        intra_errors: list[float] = []
+        unique_waves = np.unique(wave_index)
+        wave_mean_times: list[float] = []
+        for w in unique_waves:
+            mask = wave_index == w
+            tf_w = t_f[mask]
+            tf_w = tf_w[np.isfinite(tf_w)]
+            if tf_w.size == 0:
+                continue
+            wave_mean_times.append(float(np.mean(tf_w)))
+            if tf_w.size > 1:
+                intra_errors.append(float(np.max(tf_w) - np.min(tf_w)))
+        self.coordination_intra_wave_error = max(intra_errors) if intra_errors else 0.0
+
+        if len(wave_mean_times) <= 1:
+            self.coordination_inter_wave_gap_error = 0.0
+        else:
+            wave_mean_times = sorted(wave_mean_times)
+            gaps = np.diff(np.asarray(wave_mean_times, dtype=float))
+            ref_gap = max(float(self.cfg.missile_strategy1_wave_gap_nominal), 1e-6)
+            self.coordination_inter_wave_gap_error = float(np.mean(np.abs(gaps - ref_gap)))
+
+        w_star = max(float(self.cfg.missile_strategy1_w_star), 0.0)
+        if (not self.coordination_target_met) and window <= w_star:
+            self.coordination_target_met = True
+            self.coordination_target_met_time = float(self.time)
+
+    def _apply_bias_constraints(self, missile_id: int, raw_cmd: np.ndarray, missile_dt: float) -> np.ndarray:
+        v = self.missile_vel[missile_id]
+        v_norm = float(np.linalg.norm(v))
+        cmd = raw_cmd.astype(float).copy()
+        if v_norm > 1e-6:
+            # 协同偏置应为法向机动：去除沿速度方向分量，避免人为改变推力轴向速度。
+            u = v / v_norm
+            cmd = cmd - float(np.dot(cmd, u)) * u
+
+        max_bias = max(float(self.cfg.missile_coordination_max_bias_accel), 0.0)
+        cmd_norm = float(np.linalg.norm(cmd))
+        if cmd_norm > max_bias > 0.0:
+            cmd = cmd * (max_bias / cmd_norm)
+
+        prev = self.prev_coordination_bias[missile_id]
+        rate_limit = max(float(self.cfg.missile_coordination_bias_rate_limit), 1e-6)
+        max_delta = rate_limit * max(float(missile_dt), 1e-4)
+        delta = cmd - prev
+        delta_norm = float(np.linalg.norm(delta))
+        if delta_norm > max_delta:
+            cmd = prev + delta * (max_delta / delta_norm)
+        self.prev_coordination_bias[missile_id] = cmd
+        return cmd
+
+    def _relax_coordination_bias(self, missile_dt: float) -> np.ndarray:
+        # 在无效触发条件下平滑衰减到零，避免偏置突变。
+        M = self.cfg.num_missiles
+        out = np.zeros((M, 3), dtype=float)
+        self._smooth_activation(0.0, missile_dt)
+        self.coordination_window_trend = 0.0
+        self.coordination_intra_wave_error = np.inf
+        self.coordination_inter_wave_gap_error = np.inf
+        zero = np.zeros(3, dtype=float)
+        for i in range(M):
+            out[i] = self._apply_bias_constraints(i, zero, missile_dt)
+        return out
+
+    def _compute_coordination_bias(self, guidance_active: np.ndarray, missile_dt: float) -> np.ndarray:
+        M = self.cfg.num_missiles
+        bias = np.zeros((M, 3), dtype=float)
+        if str(self.cfg.missile_coordination_strategy).lower() != "strategy1":
+            self.coordination_window_est = np.inf
+            self.coordination_window_error = np.inf
+            self.coordination_gain_scale = 0.0
+            return self._relax_coordination_bias(missile_dt)
+
+        idx = np.where(self.missile_launched & self.missile_alive & guidance_active)[0]
+        if idx.size <= 1:
+            self.coordination_window_est = np.inf
+            self.coordination_window_error = np.inf
+            self.coordination_gain_scale = 0.0
+            return self._relax_coordination_bias(missile_dt)
+
+        rel = self.blue_pos[None, :] - self.missile_pos[idx]
+        rel_vel = self.blue_vel[None, :] - self.missile_vel[idx]
+        tgo = self._estimate_dynamic_tgo(idx, rel, rel_vel, missile_dt)
+        valid = np.isfinite(tgo)
+        if np.count_nonzero(valid) <= 1:
+            self.coordination_window_est = np.inf
+            self.coordination_window_error = np.inf
+            self.coordination_gain_scale = 0.0
+            return self._relax_coordination_bias(missile_dt)
+        t_f = self.time + tgo
+
+        launch_times = self.missile_launch_times[idx]
+        launch_offsets = launch_times - float(np.min(launch_times))
+        delta_wave = max(float(self.cfg.missile_strategy1_wave_gap_nominal), 1e-6)
+        if float(self.cfg.missile_strategy1_wave_gap_nominal) > 1e-6:
+            self.missile_wave_index[idx] = np.floor(
+                launch_offsets / float(self.cfg.missile_strategy1_wave_gap_nominal)
+            ).astype(int)
+        else:
+            self.missile_wave_index[idx] = 0
+        if float(np.max(launch_offsets)) <= float(self.cfg.missile_strategy1_wave_sync_tol):
+            # 单波次：使用 e_i = tgo_i - max_j tgo_j <= 0
+            e_sync = tgo - float(np.max(tgo))
+        else:
+            # 多波次：ξ_i = t_i^f - sum_{l=1}^{σ(i)-1} Δ_l，e_i^ξ = Σ_j a_ij(ξ_i-ξ_j)
+            cumulative_offsets = self._compute_wave_cumulative_offsets(
+                launch_offsets=launch_offsets,
+                wave_index=self.missile_wave_index[idx].astype(int),
+            )
+            xi = t_f - cumulative_offsets
+            adjacency = self._build_coordination_adjacency(idx.size)
+            e_sync = np.sum(adjacency * (xi[:, None] - xi[None, :]), axis=1)
+        self._update_coordination_diagnostics(
+            t_f=t_f,
+            wave_index=self.missile_wave_index[idx].astype(int),
+            missile_dt=missile_dt,
+        )
+
+        base_gain = float(self.cfg.missile_coordination_gain)
+        decay = float(self.cfg.missile_coordination_gain_decay)
+        window_scale = self._compute_window_feedback_scale(t_f)
+        closing_ratio = float(np.mean(tgo < float(self.cfg.missile_max_flight_time)))
+        min_ratio = float(np.clip(self.cfg.missile_coordination_min_closing_ratio, 0.0, 1.0))
+        if closing_ratio <= min_ratio:
+            closing_gate = 0.0
+        else:
+            closing_gate = (closing_ratio - min_ratio) / max(1.0 - min_ratio, 1e-6)
+        activation = self._smooth_activation(window_scale * closing_gate, missile_dt)
+        gain_t = base_gain * math.exp(-decay * float(self.time)) * activation
+        gain_t = max(gain_t, 0.0)
+        a_t_est = (self.blue_vel - self.prev_blue_vel) / max(float(self.cfg.dt), 1e-4)
+        a_t_gain = float(self.cfg.missile_strategy1_target_accel_comp_gain)
+
+        for local_k, missile_id in enumerate(idx):
+            r = rel[local_k]
+            r_norm = float(np.linalg.norm(r))
+            if r_norm < 1e-6:
+                continue
+            los = r / r_norm
+            los_omega = np.cross(r, rel_vel[local_k]) / max(r_norm ** 2, 1e-9)
+            omega_norm = float(np.linalg.norm(los_omega))
+            if omega_norm < 1e-8:
+                continue
+            s_i = los_omega / omega_norm
+            a_t_perp = a_t_est - float(np.dot(a_t_est, los)) * los
+            raw_cmd = -gain_t * float(e_sync[local_k]) * s_i + a_t_gain * a_t_perp
+            bias[missile_id] = self._apply_bias_constraints(missile_id, raw_cmd, missile_dt)
+
+        inactive = np.setdiff1d(np.arange(M, dtype=int), idx, assume_unique=False)
+        if inactive.size > 0:
+            zero = np.zeros(3, dtype=float)
+            for missile_id in inactive:
+                bias[missile_id] = self._apply_bias_constraints(int(missile_id), zero, missile_dt)
+        return bias
 
     def _compute_threat_terms(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         idx_active = self._active_missile_indices()
