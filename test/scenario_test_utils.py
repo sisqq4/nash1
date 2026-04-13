@@ -184,6 +184,15 @@ def _collect_step_diagnostics(env: Any, step: int, time_value: float) -> Dict[st
         "tgo_min": float(tgo_min),
         "tgo_max": float(tgo_max),
         "encirclement": float(encirclement),
+        "coord_window": float(getattr(env, "coordination_window_est", float("inf"))),
+        "coord_window_error": float(getattr(env, "coordination_window_error", float("inf"))),
+        "coord_gain_scale": float(getattr(env, "coordination_gain_scale", 0.0)),
+        "coord_activation": float(getattr(env, "coordination_activation", 0.0)),
+        "coord_window_trend": float(getattr(env, "coordination_window_trend", 0.0)),
+        "coord_intra_wave_error": float(getattr(env, "coordination_intra_wave_error", float("inf"))),
+        "coord_inter_wave_gap_error": float(getattr(env, "coordination_inter_wave_gap_error", float("inf"))),
+        "coord_target_met": float(1.0 if bool(getattr(env, "coordination_target_met", False)) else 0.0),
+        "coord_target_met_time": float(getattr(env, "coordination_target_met_time", -1.0)),
     }
 
 
@@ -200,6 +209,16 @@ def _episode_multi_metrics(step_rows: List[Dict[str, Any]], initial_missiles: in
             "degrade_to_2_time": -1.0,
             "degrade_to_1_time": -1.0,
             "degrade_to_0_time": -1.0,
+            "coord_window_mean": 0.0,
+            "coord_window_min": 0.0,
+            "coord_window_error_mean": 0.0,
+            "coord_window_trend_mean": 0.0,
+            "coord_gain_scale_mean": 0.0,
+            "coord_activation_mean": 0.0,
+            "coord_intra_wave_error_mean": 0.0,
+            "coord_inter_wave_gap_error_mean": 0.0,
+            "coord_target_met_rate": 0.0,
+            "coord_target_met_time": -1.0,
         }
 
     threat_ids = [int(r["primary_threat_id"]) for r in step_rows if int(r["primary_threat_id"]) >= 0]
@@ -215,6 +234,15 @@ def _episode_multi_metrics(step_rows: List[Dict[str, Any]], initial_missiles: in
     tgo_std_vals = [float(r["tgo_std"]) for r in step_rows]
     times = [float(r["time"]) for r in step_rows]
     active = [int(r["active_missiles"]) for r in step_rows]
+    coord_window_vals = [float(r.get("coord_window", 0.0)) for r in step_rows if np.isfinite(float(r.get("coord_window", float("inf"))))]
+    coord_window_err_vals = [float(r.get("coord_window_error", 0.0)) for r in step_rows if np.isfinite(float(r.get("coord_window_error", float("inf"))))]
+    coord_window_trend_vals = [float(r.get("coord_window_trend", 0.0)) for r in step_rows]
+    coord_gain_vals = [float(r.get("coord_gain_scale", 0.0)) for r in step_rows]
+    coord_act_vals = [float(r.get("coord_activation", 0.0)) for r in step_rows]
+    coord_intra_vals = [float(r.get("coord_intra_wave_error", 0.0)) for r in step_rows if np.isfinite(float(r.get("coord_intra_wave_error", float("inf"))))]
+    coord_inter_vals = [float(r.get("coord_inter_wave_gap_error", 0.0)) for r in step_rows if np.isfinite(float(r.get("coord_inter_wave_gap_error", float("inf"))))]
+    target_met_vals = [float(r.get("coord_target_met", 0.0)) for r in step_rows]
+    met_times = [float(r.get("coord_target_met_time", -1.0)) for r in step_rows if float(r.get("coord_target_met_time", -1.0)) >= 0.0]
 
     if len(widths) > 1:
         dt = max(times[-1] - times[0], 1e-6)
@@ -243,6 +271,16 @@ def _episode_multi_metrics(step_rows: List[Dict[str, Any]], initial_missiles: in
         "degrade_to_2_time": float(deg2),
         "degrade_to_1_time": float(deg1),
         "degrade_to_0_time": float(deg0),
+        "coord_window_mean": float(np.mean(coord_window_vals)) if coord_window_vals else 0.0,
+        "coord_window_min": float(np.min(coord_window_vals)) if coord_window_vals else 0.0,
+        "coord_window_error_mean": float(np.mean(coord_window_err_vals)) if coord_window_err_vals else 0.0,
+        "coord_window_trend_mean": float(np.mean(coord_window_trend_vals)) if coord_window_trend_vals else 0.0,
+        "coord_gain_scale_mean": float(np.mean(coord_gain_vals)) if coord_gain_vals else 0.0,
+        "coord_activation_mean": float(np.mean(coord_act_vals)) if coord_act_vals else 0.0,
+        "coord_intra_wave_error_mean": float(np.mean(coord_intra_vals)) if coord_intra_vals else 0.0,
+        "coord_inter_wave_gap_error_mean": float(np.mean(coord_inter_vals)) if coord_inter_vals else 0.0,
+        "coord_target_met_rate": float(np.mean(target_met_vals)) if target_met_vals else 0.0,
+        "coord_target_met_time": float(np.min(met_times)) if met_times else -1.0,
     }
 
 def _build_bt_inputs(env: Any, bt_team: int) -> Tuple[PlaneSnapshot, List[MissileSnapshot]]:
