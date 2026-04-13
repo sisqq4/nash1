@@ -6,6 +6,8 @@ from __future__ import annotations
 import os
 import time
 import json
+import gc
+from collections import deque
 from dataclasses import asdict
 from typing import Tuple, Any, Dict, List
 
@@ -116,7 +118,7 @@ def train() -> None:
     if train_cfg.checkpoint_interval > 0:
         os.makedirs(train_cfg.checkpoint_dir, exist_ok=True)
 
-    episode_rewards = []
+    episode_rewards_window = deque(maxlen=max(1, train_cfg.print_interval))
     global_step = 0
     success_count = 0
     # start_time = time.time()
@@ -146,7 +148,7 @@ def train() -> None:
             global_step += 1
             step += 1
 
-        episode_rewards.append(ep_reward)
+        episode_rewards_window.append(ep_reward)
         # Determine whether this episode is a successful escape (blue survives until timeout).
         episode_steps = env.step_count
         episode_success = False
@@ -174,8 +176,8 @@ def train() -> None:
             }
         )
 
-        window = min(train_cfg.print_interval, len(episode_rewards))
-        avg_reward = sum(episode_rewards[-window:]) / max(window, 1)
+        window = len(episode_rewards_window)
+        avg_reward = sum(episode_rewards_window) / max(window, 1)
         elapsed = time.time() - start_time
         success_rate = cumulative_success_rate
         if ep % 10 == 0:
@@ -192,6 +194,19 @@ def train() -> None:
             ckpt_name = f"checkpoint_ep{ep:04d}.pt"
             ckpt_path = os.path.join(train_cfg.checkpoint_dir, ckpt_name)
             save_checkpoint(ckpt_path, ep, agent, env)
+
+        if ep % 200 == 0 and per_episode_rows:
+            episode_path = os.path.join(train_cfg.results_dir, "episode_summary.csv")
+            pd.DataFrame(per_episode_rows).to_csv(
+                episode_path,
+                index=False,
+                mode="a" if os.path.exists(episode_path) else "w",
+                header=not os.path.exists(episode_path),
+            )
+            per_episode_rows.clear()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Every 10 episodes, convert this episode to a Tacview ACMI
         if env_cfg.log_trajectories and ep % 10 == 0:

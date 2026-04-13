@@ -223,3 +223,4 @@ class TrainConfig:
     load_red: bool = False
     results_dir: str = "outputs/results"
     reward_mode: str = "auto"
+    blue_policy: str = "dqn"  # dqn | behavior_tree
