@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 @dataclass
 class EnvConfig:
@@ -184,11 +184,13 @@ class EnvConfig:
     missile_strategy1_trec: float = 6.0  # [s], target minimum recovery time
     missile_strategy1_w_star: float = 1.0  # [s], desired compressed impact-time window
     missile_strategy1_wave_gap_nominal: float = 0.8  # [s], nominal gap between adjacent waves
+    missile_strategy1_wave_gap_sequence: Optional[Tuple[float, ...]] = None  # [s], explicit Δ_l list between adjacent waves
     missile_strategy1_topology: str = "all_to_all"  # all_to_all | ring
-    missile_strategy1_tgo_alpha: float = 0.7  # blend ratio for dynamic tgo filter
     missile_coordination_activation_tau: float = 0.4  # [s], first-order smoothing time constant
     missile_coordination_bias_rate_limit: float = 0.5  # [km/s^3], bias slew-rate limit
     missile_coordination_min_closing_ratio: float = 0.5  # smooth gate when few missiles are closing
+    missile_coordination_gain_error_weight: float = 0.6  # individual K_i(t) sensitivity to synchronization error
+    missile_coordination_target_accel_comp_weight: float = 1.0  # target lateral accel compensation weight
 
     # Threat score Ti = sigma(b1*(1/ri)+b2*max(0,-r_dot_i)+b3*(1/tgo_i)+b4*|q_i|+b5*xi_M_i)
     threat_b1: float = 1.0
