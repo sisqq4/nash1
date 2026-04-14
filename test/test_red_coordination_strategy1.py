@@ -114,3 +114,59 @@ def test_coordination_diagnostics_are_updated() -> None:
     assert np.isfinite(env.coordination_window_trend)
     assert np.isfinite(env.coordination_intra_wave_error)
     assert np.isfinite(env.coordination_inter_wave_gap_error)
+
+
+def test_multi_wave_cumulative_offsets_follow_launch_sequence() -> None:
+    env = _build_env("strategy1")
+    launch_times = np.array([0.0, 0.1, 1.0, 1.15, 2.7], dtype=float)
+    wave_idx, wave_offsets = env._compute_wave_index_and_cumulative_offsets(launch_times)
+
+    assert np.array_equal(wave_idx, np.array([0, 0, 1, 1, 2], dtype=int))
+    # 严格累计: 第3波偏移应为 (1.0-0.0) + (2.7-1.0) = 2.7
+    assert np.isclose(wave_offsets[4], 2.7, atol=1e-6)
+
+
+def test_tgo_estimation_requires_closing_condition() -> None:
+    env = _build_env("strategy1")
+    guidance_active = np.ones(3, dtype=bool)
+    # 令第一枚导弹径向发散，触发 r_dot >= 0 条件
+    env.missile_vel[0] = np.array([-0.3, 0.0, 0.0], dtype=float)
+
+    _ = env._compute_coordination_bias(guidance_active, missile_dt=0.05)
+    assert np.isclose(env.missile_tgo_hat[0], env.cfg.missile_max_flight_time)
+
+
+def test_explicit_wave_gap_sequence_overrides_observed_delta() -> None:
+    env = _build_env("strategy1")
+    env.cfg.missile_strategy1_wave_gap_sequence = (0.5, 1.2)
+    launch_times = np.array([0.0, 0.1, 1.0, 1.15, 2.7], dtype=float)
+    wave_idx, wave_offsets = env._compute_wave_index_and_cumulative_offsets(launch_times)
+
+    assert np.array_equal(wave_idx, np.array([0, 0, 1, 1, 2], dtype=int))
+    # 累计偏移应来自显式序列: [0.5, 1.2] => 第3波累计 1.7
+    assert np.isclose(wave_offsets[4], 1.7, atol=1e-6)
+
+
+def test_individual_coordination_gain_increases_with_error() -> None:
+    env = _build_env("strategy1")
+    env.cfg.missile_coordination_gain_error_weight = 0.8
+    e_sync = np.array([0.1, 0.5, 1.0], dtype=float)
+    gain_i = env._compute_individual_coordination_gain(e_sync=e_sync, gain_t=2.0)
+
+    assert np.all(gain_i > 0.0)
+    assert gain_i[2] > gain_i[1] > gain_i[0]
+
+
+def test_target_accel_compensation_is_lateral_and_weighted() -> None:
+    env = _build_env("strategy1")
+    env.cfg.missile_coordination_target_accel_comp_weight = 0.5
+    missile_vel = np.array([0.4, 0.0, 0.0], dtype=float)
+    target_acc = np.array([0.2, 0.3, 0.1], dtype=float)
+    comp = env._compute_target_accel_compensation(missile_vel, target_acc)
+
+    # 与速度方向正交（仅法向补偿）
+    assert np.isclose(float(np.dot(comp, missile_vel)), 0.0, atol=1e-8)
+    # x 分量被剔除，y/z 分量按权重缩放
+    assert np.isclose(comp[0], 0.0, atol=1e-8)
+    assert np.isclose(comp[1], 0.15, atol=1e-8)
+    assert np.isclose(comp[2], 0.05, atol=1e-8)

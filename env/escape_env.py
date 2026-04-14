@@ -530,9 +530,11 @@ class EscapeEnv:
             self.missile_model.dt = missile_dt
             try:
                 for sub_idx in range(substeps):
+                    target_accel_est = (self.blue_vel - prev_blue_vel) / max(dt, 1e-6)
                     coordination_bias = self._compute_coordination_bias(
                         guidance_active=guidance_active,
                         missile_dt=missile_dt,
+                        target_accel_est=target_accel_est,
                     )
                     sub_prev_missile_pos = self.missile_pos.copy()
                     sub_pos, sub_vel = self.missile_model.step(
@@ -826,7 +828,6 @@ class EscapeEnv:
     def _estimate_dynamic_tgo(self, idx: np.ndarray, rel: np.ndarray, rel_vel: np.ndarray, missile_dt: float) -> np.ndarray:
         tgo = np.full(idx.shape[0], np.inf, dtype=float)
         dt_safe = max(float(missile_dt), 1e-4)
-        alpha = float(np.clip(self.cfg.missile_strategy1_tgo_alpha, 0.0, 1.0))
         max_tgo = max(float(self.cfg.missile_max_flight_time), 1.0)
 
         for k, missile_id in enumerate(idx):
@@ -841,10 +842,15 @@ class EscapeEnv:
 
             los = r_vec / r
             r_dot = float(np.dot(rel_vel[k], los))
-            if r_dot < -1e-6:
-                tgo_static = -r / r_dot
-            else:
-                tgo_static = max_tgo
+            if r_dot >= -1e-6:
+                # 严格遵循 tgo 定义：仅在闭合段(r_dot<0)定义可用 tgo。
+                self.missile_tgo_hat[missile_id] = max_tgo
+                self.missile_prev_r[missile_id] = r
+                self.missile_prev_rdot[missile_id] = r_dot
+                tgo[k] = max_tgo
+                continue
+
+            tgo_static = -r / r_dot
 
             prev_rdot = self.missile_prev_rdot[missile_id]
             prev_tgo = self.missile_tgo_hat[missile_id]
@@ -853,7 +859,10 @@ class EscapeEnv:
                 denom = max(r_dot * r_dot, 1e-8)
                 tgo_dot = -((r_dot * r_dot) - r * r_ddot) / denom
                 tgo_dyn = prev_tgo + tgo_dot * dt_safe
-                tgo_est = alpha * tgo_dyn + (1.0 - alpha) * tgo_static
+                if np.isfinite(tgo_dyn) and tgo_dyn >= 0.0:
+                    tgo_est = tgo_dyn
+                else:
+                    tgo_est = tgo_static
             else:
                 tgo_est = tgo_static
 
@@ -863,6 +872,89 @@ class EscapeEnv:
             self.missile_prev_rdot[missile_id] = r_dot
             tgo[k] = tgo_est
         return tgo
+
+    def _compute_wave_index_and_cumulative_offsets(self, launch_times: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """按发射时序分波次，并生成严格累计的跨波次期望偏移 ΣΔ_l。"""
+        n = launch_times.shape[0]
+        if n == 0:
+            return np.zeros(0, dtype=int), np.zeros(0, dtype=float)
+
+        order = np.argsort(launch_times)
+        sorted_t = launch_times[order]
+        sync_tol = max(float(self.cfg.missile_strategy1_wave_sync_tol), 1e-6)
+        nominal_gap = max(float(self.cfg.missile_strategy1_wave_gap_nominal), 1e-6)
+
+        wave_sorted = np.zeros(n, dtype=int)
+        wave_starts = [float(sorted_t[0])]
+        w = 0
+        for i in range(1, n):
+            if float(sorted_t[i] - sorted_t[i - 1]) > sync_tol:
+                w += 1
+                wave_starts.append(float(sorted_t[i]))
+            wave_sorted[i] = w
+
+        wave_starts_arr = np.asarray(wave_starts, dtype=float)
+        if wave_starts_arr.size <= 1:
+            cum_wave = np.zeros(wave_starts_arr.size, dtype=float)
+        else:
+            delta = np.diff(wave_starts_arr)
+            delta = self._resolve_wave_gap_sequence(
+                observed_delta=delta,
+                num_required=delta.shape[0],
+                nominal_gap=nominal_gap,
+            )
+            cum_wave = np.concatenate(([0.0], np.cumsum(delta)))
+
+        wave_index = np.zeros(n, dtype=int)
+        cumulative = np.zeros(n, dtype=float)
+        wave_index[order] = wave_sorted
+        cumulative[order] = cum_wave[wave_sorted]
+        return wave_index, cumulative
+
+    def _resolve_wave_gap_sequence(
+        self,
+        observed_delta: np.ndarray,
+        num_required: int,
+        nominal_gap: float,
+    ) -> np.ndarray:
+        """解析跨波次间隔 Δ_l：优先使用显式配置序列，不足部分用观测/标称补齐。"""
+        if num_required <= 0:
+            return np.zeros(0, dtype=float)
+
+        cfg_seq = getattr(self.cfg, "missile_strategy1_wave_gap_sequence", None)
+        if cfg_seq is None:
+            cfg_vals = np.zeros(0, dtype=float)
+        else:
+            cfg_vals = np.asarray(tuple(cfg_seq), dtype=float).reshape(-1)
+            cfg_vals = cfg_vals[np.isfinite(cfg_vals)]
+            cfg_vals = cfg_vals[cfg_vals > 0.0]
+
+        out = np.zeros(num_required, dtype=float)
+        num_cfg = min(num_required, cfg_vals.shape[0])
+        if num_cfg > 0:
+            out[:num_cfg] = cfg_vals[:num_cfg]
+
+        if num_cfg < num_required:
+            remain = observed_delta[: (num_required - num_cfg)]
+            out[num_cfg:] = np.maximum(remain, nominal_gap)
+
+        out = np.maximum(out, nominal_gap)
+        return out
+
+    def _compute_individual_coordination_gain(self, e_sync: np.ndarray, gain_t: float) -> np.ndarray:
+        """按误差幅值给出逐弹 K_i(t)，保持严格正值。"""
+        if e_sync.size == 0:
+            return np.zeros(0, dtype=float)
+        g = max(float(gain_t), 0.0)
+        if g <= 0.0:
+            return np.zeros_like(e_sync, dtype=float)
+
+        err_abs = np.abs(e_sync.astype(float))
+        err_ref = max(float(np.max(err_abs)), 1e-6)
+        err_norm = err_abs / err_ref
+        weight = max(float(self.cfg.missile_coordination_gain_error_weight), 0.0)
+        gain_i = g * (1.0 + weight * err_norm)
+        return np.maximum(gain_i, 1e-8)
 
     def _compute_window_feedback_scale(self, t_f: np.ndarray) -> float:
         finite_tf = t_f[np.isfinite(t_f)]
@@ -977,9 +1069,27 @@ class EscapeEnv:
             out[i] = self._apply_bias_constraints(i, zero, missile_dt)
         return out
 
-    def _compute_coordination_bias(self, guidance_active: np.ndarray, missile_dt: float) -> np.ndarray:
+    def _compute_target_accel_compensation(self, missile_vel: np.ndarray, target_accel_est: np.ndarray) -> np.ndarray:
+        """目标机动补偿项：将目标加速度投影到导弹速度法向平面。"""
+        a_t = target_accel_est.astype(float)
+        v_norm = float(np.linalg.norm(missile_vel))
+        if v_norm < 1e-6:
+            return np.zeros(3, dtype=float)
+        u = missile_vel / v_norm
+        a_perp = a_t - float(np.dot(a_t, u)) * u
+        w = max(float(self.cfg.missile_coordination_target_accel_comp_weight), 0.0)
+        return w * a_perp
+
+    def _compute_coordination_bias(
+        self,
+        guidance_active: np.ndarray,
+        missile_dt: float,
+        target_accel_est: np.ndarray | None = None,
+    ) -> np.ndarray:
         M = self.cfg.num_missiles
         bias = np.zeros((M, 3), dtype=float)
+        if target_accel_est is None:
+            target_accel_est = np.zeros(3, dtype=float)
         if str(self.cfg.missile_coordination_strategy).lower() != "strategy1":
             self.coordination_window_est = np.inf
             self.coordination_window_error = np.inf
@@ -1005,20 +1115,14 @@ class EscapeEnv:
         t_f = self.time + tgo
 
         launch_times = self.missile_launch_times[idx]
-        launch_offsets = launch_times - float(np.min(launch_times))
-        delta_wave = max(float(self.cfg.missile_strategy1_wave_gap_nominal), 1e-6)
-        if float(self.cfg.missile_strategy1_wave_gap_nominal) > 1e-6:
-            self.missile_wave_index[idx] = np.floor(
-                launch_offsets / float(self.cfg.missile_strategy1_wave_gap_nominal)
-            ).astype(int)
-        else:
-            self.missile_wave_index[idx] = 0
-        if float(np.max(launch_offsets)) <= float(self.cfg.missile_strategy1_wave_sync_tol):
+        wave_local, wave_cum_offsets = self._compute_wave_index_and_cumulative_offsets(launch_times)
+        self.missile_wave_index[idx] = wave_local
+        if np.max(wave_local) == 0:
             # 单波次：使用 e_i = tgo_i - max_j tgo_j <= 0
             e_sync = tgo - float(np.max(tgo))
         else:
             # 多波次：ξ_i = t_i^f - sum_{l=1}^{σ(i)-1} Δ_l，e_i^ξ = Σ_j a_ij(ξ_i-ξ_j)
-            xi = t_f - self.missile_wave_index[idx].astype(float) * delta_wave
+            xi = t_f - wave_cum_offsets
             adjacency = self._build_coordination_adjacency(idx.size)
             e_sync = np.sum(adjacency * (xi[:, None] - xi[None, :]), axis=1)
         self._update_coordination_diagnostics(
@@ -1039,6 +1143,7 @@ class EscapeEnv:
         activation = self._smooth_activation(window_scale * closing_gate, missile_dt)
         gain_t = base_gain * math.exp(-decay * float(self.time)) * activation
         gain_t = max(gain_t, 0.0)
+        gain_i = self._compute_individual_coordination_gain(e_sync=e_sync, gain_t=gain_t)
 
         for local_k, missile_id in enumerate(idx):
             r = rel[local_k]
@@ -1050,7 +1155,11 @@ class EscapeEnv:
             if omega_norm < 1e-8:
                 continue
             s_i = los_omega / omega_norm
-            raw_cmd = -gain_t * float(e_sync[local_k]) * s_i
+            a_t_comp = self._compute_target_accel_compensation(
+                missile_vel=self.missile_vel[missile_id],
+                target_accel_est=target_accel_est,
+            )
+            raw_cmd = -float(gain_i[local_k]) * float(e_sync[local_k]) * s_i + a_t_comp
             bias[missile_id] = self._apply_bias_constraints(missile_id, raw_cmd, missile_dt)
 
         inactive = np.setdiff1d(np.arange(M, dtype=int), idx, assume_unique=False)
