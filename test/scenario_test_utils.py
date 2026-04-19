@@ -382,7 +382,7 @@ def run_scenario_sweep_multi_diagnostics(
     #   terminal values (e.g., zero after missiles expire), which would disable PN
     #   in later tests. We keep red parameters from env_cfg/config.json so red uses
     #   the same PN/drag/speed model settings as training-time configuration.
-    load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
+    load_checkpoint(checkpoint_path, agent, env, load_blue=False, load_red=False)
     agent.q_net.eval()
     policy_name = str(blue_eval_policy).strip().lower()
     bt_agent = BlueBTAgent(uid="blue_eval_bt", team=0) if policy_name == "bt" else None
@@ -408,7 +408,7 @@ def run_scenario_sweep_multi_diagnostics(
         sc_env_cfg.log_trajectories = True
 
         env, _ = make_env_and_agent(sc_env_cfg, train_cfg, seed=seed + scenario_idx)
-        load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
+        load_checkpoint(checkpoint_path, agent, env, load_blue=False, load_red=False)
 
         wins = 0
         for ep in range(1, episodes_per_scenario + 1):

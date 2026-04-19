@@ -182,7 +182,7 @@ class EnvConfig:
     missile_coordination_max_bias_accel: float = 0.12  # km/s^2
     missile_strategy1_wave_sync_tol: float = 0.2  # [s], <= means same wave
     missile_strategy1_trec: float = 6.0  # [s], target minimum recovery time
-    missile_strategy1_w_star: float = 1.0  # [s], desired compressed impact-time window
+    missile_strategy1_w_star: float = 1.4  # [s], desired compressed impact-time window
     missile_strategy1_wave_gap_nominal: float = 0.8  # [s], nominal gap between adjacent waves
     missile_strategy1_wave_gap_sequence: Optional[Tuple[float, ...]] = None  # [s], explicit Δ_l list between adjacent waves
     missile_strategy1_topology: str = "all_to_all"  # all_to_all | ring

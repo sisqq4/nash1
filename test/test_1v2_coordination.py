@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260326_103719_1v2")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=200)
+    parser.add_argument("--episodes-per-scenario", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default="multi_coop")
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="bt")
@@ -97,17 +97,23 @@ def _build_episode_initializer(
 def _build_scenarios() -> list[dict[str, object]]:
     # 三个关键变量扫描：发射时延、第一发几何劣化、蓝机可机动强度
     launch_delay_windows = [
-        ("delay_06_08", (0.6, 0.8)),
-        ("delay_09_11", (0.9, 1.1)),
-        ("delay_13_15", (1.3, 1.5)),
+        ("delay_02_03", (0.2, 0.3)),
+        ("delay_03_04", (0.3, 0.4)),
+        ("delay_04_05", (0.4, 0.5)),
+        ("delay_05_06", (0.5, 0.6)),
+        ("delay_06_07", (0.6, 0.7)),
+        ("delay_07_08", (0.7, 0.8)),
     ]
     first_shot_geometry_levels = [
-        ("first_mild_deg", (16.0, 18.0), (1.2, 2.2)),
-        ("first_heavy_deg", (18.0, 21.0), (2.0, 3.4)),
+        ("first_mild_deg", (12.0, 14.0), (1.2, 2.2)),
+    ]
+    second_shot_geometry_levels = [
+        ("second_mild_deg", (12.0, 14.0), (0.2, 0.8)),
     ]
     blue_accel_levels = [
-        ("blue_mid_g", 0.085),
-        ("blue_high_g", 0.100),
+        # ("blue_mid_g", 0.085),
+        # ("blue_high_g", 0.100),
+        ("blue_g", 0.090),
     ]
 
     blue_x = 18.0
@@ -196,7 +202,7 @@ def main() -> None:
     scenarios = _build_scenarios()
     all_rows, step_rows = run_scenario_sweep_multi_diagnostics(
         checkpoint_path=checkpoint_path,
-        output_root=str(Path("outputs") / "tests_1v2_coordination"),
+        output_root=str(Path("outputs") / "tests_1v2_coordination_coop"),
         scenarios=scenarios,
         episodes_per_scenario=args.episodes_per_scenario,
         seed=args.seed,
@@ -264,7 +270,7 @@ def main() -> None:
             }
         )
 
-    results_dir = Path("outputs") / "tests_1v2_coordination" / "results"
+    results_dir = Path("outputs") / "tests_1v2_coordination_coop" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(results_dir / "result_1v2_coordination_compare.csv", result_rows)
     _plot_diagnostics(step_rows, results_dir)
