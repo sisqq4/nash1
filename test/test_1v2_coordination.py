@@ -31,7 +31,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def _mean(vals: list[float]) -> float:
-    return sum(vals) / len(vals) if vals else 0.0
+    if not vals:
+        return 0.0
+    arr = np.asarray(vals, dtype=float)
+    mask = np.isfinite(arr)
+    if not np.any(mask):
+        return 0.0
+    return float(np.mean(arr[mask]))
 
 
 def _write_csv(path: Path, rows: list[dict[str, float]]) -> None:
@@ -44,13 +50,13 @@ def _write_csv(path: Path, rows: list[dict[str, float]]) -> None:
 
 
 def _build_episode_initializer(
-    first_dist_range: tuple[float, float],
     first_lateral_range: tuple[float, float],
-    second_dist_range: tuple[float, float],
     second_lateral_range: tuple[float, float],
     launch_gap_range: tuple[float, float],
 ) -> Any:
-    def _initializer(env: Any, episode_seed: int, _: int) -> None:
+    cycle_distances = tuple(float(v) for v in range(6, 31))
+
+    def _initializer(env: Any, episode_seed: int, episode_idx: int) -> None:
         rng = np.random.default_rng(int(episode_seed) + 7919)
 
         blue_pos = env.blue_pos.copy()
@@ -63,8 +69,10 @@ def _build_episode_initializer(
         h_hat_xy = heading_xy / h_norm
         lateral_xy = np.array([-h_hat_xy[1], h_hat_xy[0]], dtype=float)
 
-        d1 = float(rng.uniform(first_dist_range[0], first_dist_range[1]))
-        d2 = float(rng.uniform(second_dist_range[0], second_dist_range[1]))
+        dist_idx = (int(episode_idx) - 1) % len(cycle_distances)
+        d_cycle = float(cycle_distances[dist_idx])
+        d1 = d_cycle
+        d2 = d_cycle
         o1_mag = float(rng.uniform(first_lateral_range[0], first_lateral_range[1]))
         o2_mag = float(rng.uniform(second_lateral_range[0], second_lateral_range[1]))
 
@@ -105,10 +113,10 @@ def _build_scenarios() -> list[dict[str, object]]:
         ("delay_07_08", (0.7, 0.8)),
     ]
     first_shot_geometry_levels = [
-        ("first_mild_deg", (12.0, 14.0), (1.2, 2.2)),
+        ("first_mild_deg", (1.2, 2.2)),
     ]
     second_shot_geometry_levels = [
-        ("second_mild_deg", (12.0, 14.0), (0.2, 0.8)),
+        ("second_mild_deg", (0.2, 0.8)),
     ]
     blue_accel_levels = [
         # ("blue_mid_g", 0.085),
@@ -136,33 +144,32 @@ def _build_scenarios() -> list[dict[str, object]]:
 
     scenarios: list[dict[str, object]] = []
     for delay_tag, delay_window in launch_delay_windows:
-        for geom_tag, first_dist_range, first_lateral_range in first_shot_geometry_levels:
-            for accel_tag, blue_accel in blue_accel_levels:
-                seed_group = f"{delay_tag}_{geom_tag}_{accel_tag}"
-                initializer = _build_episode_initializer(
-                    first_dist_range=first_dist_range,
-                    first_lateral_range=first_lateral_range,
-                    second_dist_range=(12.0, 14.0),
-                    second_lateral_range=(0.2, 0.8),
-                    launch_gap_range=delay_window,
-                )
-                for coordination in ["none", "strategy1"]:
-                    scenario_name = f"{seed_group}_{coordination}"
-                    scenarios.append(
-                        {
-                            "scenario_name": scenario_name,
-                            "family": "same_direction_time_lag",
-                            "sub_type": f"{delay_tag}|{geom_tag}|{accel_tag}",
-                            "coordination": coordination,
-                            "seed_group": seed_group,
-                            "episode_initializer": initializer,
-                            "env_overrides": {
-                                **base,
-                                "blue_accel": blue_accel,
-                                "missile_coordination_strategy": coordination,
-                            },
-                        }
+        for geom_tag, first_lateral_range in first_shot_geometry_levels:
+            for second_geom_tag, second_lateral_range in second_shot_geometry_levels:
+                for accel_tag, blue_accel in blue_accel_levels:
+                    seed_group = f"{delay_tag}_{geom_tag}_{accel_tag}"
+                    initializer = _build_episode_initializer(
+                        first_lateral_range=first_lateral_range,
+                        second_lateral_range=second_lateral_range,
+                        launch_gap_range=delay_window,
                     )
+                    for coordination in ["none", "strategy1"]:
+                        scenario_name = f"{seed_group}_{second_geom_tag}_{coordination}"
+                        scenarios.append(
+                            {
+                                "scenario_name": scenario_name,
+                                "family": "same_direction_time_lag",
+                                "sub_type": f"{delay_tag}|{geom_tag}|{second_geom_tag}|{accel_tag}",
+                                "coordination": coordination,
+                                "seed_group": seed_group,
+                                "episode_initializer": initializer,
+                                "env_overrides": {
+                                    **base,
+                                    "blue_accel": blue_accel,
+                                    "missile_coordination_strategy": coordination,
+                                },
+                            }
+                        )
     return scenarios
 
 
@@ -221,13 +228,17 @@ def main() -> None:
         for k in [
             "win", "reward", "steps", "min_dist", "final_dist", "avg_speed", "hit", "timeout", "crashed", "missiles_exhausted",
             "first_missile_hit", "second_missile_hit",
+            "first_missile_min_dist", "second_missile_min_dist",
+            "first_missile_min_dist_time", "second_missile_min_dist_time",
+            "missile_min_dist_time_delta",
             "threat_switch_count", "threat_id_jitter_rate", "corridor_width_mean", "corridor_width_min", "corridor_width_trend",
             "tgo_std_mean", "tgo_std_max", "degrade_to_1_time", "degrade_to_0_time",
             "coord_window_mean", "coord_window_min", "coord_window_error_mean", "coord_window_trend_mean",
             "coord_gain_scale_mean", "coord_activation_mean", "coord_intra_wave_error_mean",
             "coord_inter_wave_gap_error_mean", "coord_target_met_rate", "coord_target_met_time",
         ]:
-            grouped[key][k].append(float(row[k]))
+            value = row.get(k, 0.0)
+            grouped[key][k].append(float("nan") if value is None else float(value))
 
     result_rows: list[dict[str, float]] = []
     for (scan_group, coord_mode), vals in sorted(grouped.items()):
@@ -240,6 +251,11 @@ def main() -> None:
                 "hit_rate": _mean(vals["hit"]),
                 "first_missile_hit_rate": _mean(vals["first_missile_hit"]),
                 "second_missile_hit_rate": _mean(vals["second_missile_hit"]),
+                "avg_first_missile_min_dist": _mean(vals["first_missile_min_dist"]),
+                "avg_second_missile_min_dist": _mean(vals["second_missile_min_dist"]),
+                "avg_first_missile_min_dist_time": _mean(vals["first_missile_min_dist_time"]),
+                "avg_second_missile_min_dist_time": _mean(vals["second_missile_min_dist_time"]),
+                "avg_missile_min_dist_time_delta": _mean(vals["missile_min_dist_time_delta"]),
                 "crash_rate": _mean(vals["crashed"]),
                 "timeout_rate": _mean(vals["timeout"]),
                 "missiles_exhausted_rate": _mean(vals["missiles_exhausted"]),
