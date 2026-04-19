@@ -427,6 +427,8 @@ def run_scenario_sweep_multi_diagnostics(
             info: Optional[Dict[str, Any]] = None
             ep_reward = 0.0
             step_rows_ep: List[Dict[str, Any]] = []
+            missile_min_dists = np.full(sc_env_cfg.num_missiles, np.inf, dtype=float)
+            missile_min_dist_times = np.full(sc_env_cfg.num_missiles, np.nan, dtype=float)
 
             while not done:
                 action = _select_eval_action(
@@ -438,6 +440,14 @@ def run_scenario_sweep_multi_diagnostics(
                 )
                 obs, reward, done, info = env.step(action)
                 ep_reward += reward
+                blue_pos_now = env.blue_pos.copy()
+                for mi in range(sc_env_cfg.num_missiles):
+                    if not bool(env.missile_launched[mi]):
+                        continue
+                    dist = float(np.linalg.norm(env.missile_pos[mi] - blue_pos_now))
+                    if dist < missile_min_dists[mi]:
+                        missile_min_dists[mi] = dist
+                        missile_min_dist_times[mi] = float(env.time)
 
                 if enable_step_diagnostics:
                     sd = _collect_step_diagnostics(env, step=env.step_count, time_value=env.time)
@@ -462,6 +472,16 @@ def run_scenario_sweep_multi_diagnostics(
             second_idx = int(launch_order[1]) if launch_order.size >= 2 else 1
             first_missile_hit = int(bool(info.get("hit", False)) and hit_missile_idx == first_idx) if info else 0
             second_missile_hit = int(bool(info.get("hit", False)) and hit_missile_idx == second_idx) if info else 0
+            first_min_dist = float(missile_min_dists[first_idx]) if first_idx < missile_min_dists.size and np.isfinite(missile_min_dists[first_idx]) else None
+            first_min_dist_time = float(missile_min_dist_times[first_idx]) if first_idx < missile_min_dist_times.size and np.isfinite(missile_min_dist_times[first_idx]) else None
+            second_min_dist = float(missile_min_dists[second_idx]) if second_idx < missile_min_dists.size and np.isfinite(missile_min_dists[second_idx]) else None
+            second_min_dist_time = float(missile_min_dist_times[second_idx]) if second_idx < missile_min_dist_times.size and np.isfinite(missile_min_dist_times[second_idx]) else None
+            time_delta = None
+            if first_missile_hit:
+                second_min_dist = None
+                second_min_dist_time = None
+            elif first_min_dist_time is not None and second_min_dist_time is not None:
+                time_delta = float(abs(second_min_dist_time - first_min_dist_time))
             row = {
                 "scenario_index": scenario_idx,
                 "scenario_name": scenario_name,
@@ -486,6 +506,11 @@ def run_scenario_sweep_multi_diagnostics(
                 "hit_missile_idx": int(hit_missile_idx),
                 "first_missile_hit": int(first_missile_hit),
                 "second_missile_hit": int(second_missile_hit),
+                "first_missile_min_dist": first_min_dist,
+                "second_missile_min_dist": second_min_dist,
+                "first_missile_min_dist_time": first_min_dist_time,
+                "second_missile_min_dist_time": second_min_dist_time,
+                "missile_min_dist_time_delta": time_delta,
                 **mm,
             }
             row.update(
