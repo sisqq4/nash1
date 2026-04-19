@@ -395,7 +395,9 @@ def run_scenario_sweep_multi_diagnostics(
         scenario_name = str(scenario["scenario_name"])
         scenario_dir = os.path.join(output_root, f"scenario_{scenario_idx:02d}_{scenario_name}")
         os.makedirs(scenario_dir, exist_ok=True)
-        seed_rng = random.Random((seed + 1) * 1_000_003 + scenario_idx)
+        seed_group = str(scenario.get("seed_group", scenario_idx))
+        seed_token = (seed + 1) * 1_000_003 + sum((i + 1) * ord(ch) for i, ch in enumerate(seed_group))
+        seed_rng = random.Random(seed_token)
 
         sc_env_cfg = EnvConfig()
         apply_config(sc_env_cfg, asdict(env_cfg))
@@ -415,6 +417,9 @@ def run_scenario_sweep_multi_diagnostics(
             env.rng = np.random.default_rng(episode_seed)
             env.launcher.rng = env.rng
             obs = env.reset()
+            episode_initializer = scenario.get("episode_initializer", None)
+            if callable(episode_initializer):
+                episode_initializer(env, episode_seed, ep)
             if bt_agent is not None:
                 init_state = np.concatenate((env.blue_pos, env.blue_vel))
                 bt_agent.reset(init_state)
@@ -450,6 +455,13 @@ def run_scenario_sweep_multi_diagnostics(
             if win:
                 wins += 1
             mm = _episode_multi_metrics(step_rows_ep, initial_missiles=sc_env_cfg.num_missiles)
+            hit_missile_idx = int(info.get("hit_missile_idx", -1)) if info else -1
+            launch_times = np.asarray(info.get("launch_times", []), dtype=float) if info else np.asarray([], dtype=float)
+            launch_order = np.argsort(launch_times, kind="stable") if launch_times.size > 0 else np.asarray([], dtype=int)
+            first_idx = int(launch_order[0]) if launch_order.size >= 1 else 0
+            second_idx = int(launch_order[1]) if launch_order.size >= 2 else 1
+            first_missile_hit = int(bool(info.get("hit", False)) and hit_missile_idx == first_idx) if info else 0
+            second_missile_hit = int(bool(info.get("hit", False)) and hit_missile_idx == second_idx) if info else 0
             row = {
                 "scenario_index": scenario_idx,
                 "scenario_name": scenario_name,
@@ -471,9 +483,18 @@ def run_scenario_sweep_multi_diagnostics(
                 "hit": int(bool(info.get("hit", False))) if info else 0,
                 "crashed": int(bool(info.get("crashed", False))) if info else 0,
                 "missiles_exhausted": int(bool(info.get("missiles_exhausted", False))) if info else 0,
+                "hit_missile_idx": int(hit_missile_idx),
+                "first_missile_hit": int(first_missile_hit),
+                "second_missile_hit": int(second_missile_hit),
                 **mm,
             }
-            row.update({f"param_{k}": v for k, v in scenario.items() if k != "env_overrides"})
+            row.update(
+                {
+                    f"param_{k}": v
+                    for k, v in scenario.items()
+                    if k != "env_overrides" and not callable(v)
+                }
+            )
             all_rows.append(row)
             step_rows_all.extend(step_rows_ep)
 

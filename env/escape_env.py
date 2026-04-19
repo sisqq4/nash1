@@ -519,6 +519,7 @@ class EscapeEnv:
         #    and finer hit judgement on each missile_update_dt segment.
         idx_launched = np.where(self.missile_launched)[0]
         hit = False
+        hit_missile_idx = -1
         step_min_dist = float("inf")
         if idx_launched.size > 0:
             inner_dt = float(getattr(self.cfg, "missile_update_dt", dt))
@@ -553,7 +554,7 @@ class EscapeEnv:
                     frac1 = (sub_idx + 1) / substeps
                     blue_sub_start = prev_blue_pos + frac0 * (self.blue_pos - prev_blue_pos)
                     blue_sub_end = prev_blue_pos + frac1 * (self.blue_pos - prev_blue_pos)
-                    sub_hit, sub_min_dist = self._check_hits_between_states(
+                    sub_hit, sub_min_dist, sub_hit_idx = self._check_hits_between_states(
                         blue_start=blue_sub_start,
                         blue_end=blue_sub_end,
                         missile_start=sub_prev_missile_pos,
@@ -562,6 +563,7 @@ class EscapeEnv:
                     step_min_dist = min(step_min_dist, sub_min_dist)
                     if sub_hit:
                         hit = True
+                        hit_missile_idx = int(sub_hit_idx)
                         break
             finally:
                 self.missile_model.dt = original_missile_dt
@@ -592,7 +594,9 @@ class EscapeEnv:
 
         # 9) Hit detection (line-segment / sphere)
         if not np.isfinite(step_min_dist):
-            hit, step_min_dist = self._check_hits(prev_blue_pos, prev_missile_pos)
+            hit, step_min_dist, fallback_hit_idx = self._check_hits(prev_blue_pos, prev_missile_pos)
+            if hit and hit_missile_idx < 0:
+                hit_missile_idx = int(fallback_hit_idx)
         # Episode-level global minimum missile-target distance:
         # per step, compute all missile distances and keep the smallest seen so far.
         all_missile_dists = np.linalg.norm(self.missile_pos - self.blue_pos[None, :], axis=1)
@@ -641,6 +645,7 @@ class EscapeEnv:
             "avg_roll_abs_deg": self._episode_roll_abs_sum_deg / max(self._episode_roll_abs_count, 1),
             "avg_turn_rate_deg": self._episode_turn_rate_sum / max(self._episode_turn_rate_count, 1),
             "hit": bool(hit),
+            "hit_missile_idx": int(hit_missile_idx),
             "timeout": bool(timeout),
             "crashed": bool(crashed),
             "missiles_exhausted": bool(missiles_exhausted),
@@ -1537,7 +1542,7 @@ class EscapeEnv:
         self,
         prev_blue_pos: np.ndarray,
         prev_missile_pos: np.ndarray,
-    ) -> Tuple[bool, float]:
+    ) -> Tuple[bool, float, int]:
         return self._check_hits_between_states(
             blue_start=prev_blue_pos,
             blue_end=self.blue_pos,
@@ -1551,9 +1556,10 @@ class EscapeEnv:
         blue_end: np.ndarray,
         missile_start: np.ndarray,
         missile_end: np.ndarray,
-    ) -> Tuple[bool, float]:
+    ) -> Tuple[bool, float, int]:
         hit_any = False
         min_dist = float("inf")
+        hit_missile_idx = -1
 
         for i in range(self.cfg.num_missiles):
             if not self.missile_launched[i]:
@@ -1565,6 +1571,7 @@ class EscapeEnv:
                 min_dist = dist
             if hit:
                 hit_any = True
+                hit_missile_idx = int(i)
                 break
 
         if not np.isfinite(min_dist):
@@ -1576,7 +1583,7 @@ class EscapeEnv:
                 min_dist = float(np.min(dists))
             else:
                 min_dist = self.cfg.region_span
-        return hit_any, min_dist
+        return hit_any, min_dist, hit_missile_idx
 
     # ------------------------------------------------------------------
     # Logging helpers
