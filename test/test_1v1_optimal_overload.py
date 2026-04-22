@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=300)
+    parser.add_argument("--episodes-per-scenario", type=int, default=10)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
@@ -125,7 +125,7 @@ def main() -> None:
 
     all_rows = run_scenario_sweep(
         checkpoint_path=checkpoint_path,
-        output_root=str(Path("outputs") / "tests_1v1_optimal_overload"),
+        output_root=str(Path("outputs") / "tests_1v1_optimal_overload_bt"),
         scenarios=scenarios,
         episodes_per_scenario=args.episodes_per_scenario,
         seed=args.seed,
@@ -181,7 +181,7 @@ def main() -> None:
             }
         )
 
-    results_dir = Path("outputs") / "tests_1v1_optimal_overload" / "results"
+    results_dir = Path("outputs") / "tests_1v1_optimal_overload_bt" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(results_dir / "result_overload_distance_scan.csv", result_rows)
     _plot_overload(result_rows, results_dir)

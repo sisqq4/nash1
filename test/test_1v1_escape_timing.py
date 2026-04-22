@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reward-mode", type=str, default=None)
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
     parser.add_argument("--min-distance-km", type=int, default=6)
-    parser.add_argument("--max-distance-km", type=int, default=9)
+    parser.add_argument("--max-distance-km", type=int, default=30)
     parser.add_argument("--distance-step-km", type=int, default=1)
     return parser.parse_args()
 
@@ -102,7 +102,7 @@ def main() -> None:
                 "red_launch_z_min": 10.0,
                 "red_launch_z_max": 10.0,
                 "missile_update_dt": 0.01,
-                "hit_radius": 0.015,
+                "hit_radius": 0.005,
             },
         }
         for distance in distances
@@ -110,14 +110,14 @@ def main() -> None:
 
     all_rows = run_scenario_sweep(
         checkpoint_path=checkpoint_path,
-        output_root=str(Path("outputs") / "tests_1v1_escape_timing"),
+        output_root=str(Path("outputs") / "tests_1v1_escape_timing_dqn"),
         scenarios=scenarios,
         episodes_per_scenario=args.episodes_per_scenario,
         seed=args.seed,
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy=args.blue_eval_policy,
+        blue_eval_policy="bt",
     )
 
     grouped: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
@@ -163,7 +163,7 @@ def main() -> None:
             }
         )
 
-    results_dir = Path("outputs") / "tests_1v1_escape_timing" / "results"
+    results_dir = Path("outputs") / "tests_1v1_escape_timing_dqn" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(results_dir / "result_timing_distance_scan.csv", result_rows)
     _plot_timing(result_rows, results_dir)
