@@ -117,7 +117,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy="bt",
+        blue_eval_policy="dqn",
     )
 
     grouped: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))

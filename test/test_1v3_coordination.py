@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260326_105033_1v3")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=500)
+    parser.add_argument("--episodes-per-scenario", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default="multi_coop")
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
@@ -51,6 +51,7 @@ def _build_scenarios() -> list[dict[str, object]]:
         "blue_y_max": 0.0,
         "blue_z_min": 10.0,
         "blue_z_max": 10.0,
+        "hit_radius": 0.005,
     }
     return [
         {
@@ -140,7 +141,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy=args.blue_eval_policy,
+        blue_eval_policy="bt",
         enable_step_diagnostics=True,
     )
 

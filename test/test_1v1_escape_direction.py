@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=10)
+    parser.add_argument("--episodes-per-scenario", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
@@ -137,6 +137,7 @@ def main() -> None:
                 "red_launch_z_min": 10.0,
                 "red_launch_z_max": 10.0,
                 "missile_update_dt": 0.01,
+                "hit_radius": 0.005,
             },
         }
         for distance in distances
@@ -152,7 +153,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy=args.blue_eval_policy,
+        blue_eval_policy="bt",
     )
 
     grouped: dict[tuple[int, int], dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))

@@ -53,6 +53,7 @@ def _build_scenarios() -> list[dict[str, object]]:
         "blue_z_max": 10.0,
         "red_launch_z_min": 10.0,
         "red_launch_z_max": 10.0,
+        "hit_radius": 0.005,
     }
     return [
         {
@@ -149,7 +150,7 @@ def main() -> None:
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy=args.blue_eval_policy,
+        blue_eval_policy="bt",
         enable_step_diagnostics=True,
     )
 
