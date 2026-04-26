@@ -440,15 +440,6 @@ def run_scenario_sweep_multi_diagnostics(
             step_rows_all.extend(step_rows_ep)
 
             if ep % checkpoint_interval == 0:
-                ckpt_name = f"test_checkpoint_ep{ep:04d}.pt"
-                ckpt_dir = os.path.join(scenario_dir, "checkpoints")
-                os.makedirs(ckpt_dir, exist_ok=True)
-                save_checkpoint(
-                    path=os.path.join(ckpt_dir, ckpt_name),
-                    episode=ep,
-                    agent=agent,
-                    env=env,
-                )
 
                 csv_dir = os.path.join(scenario_dir, "csv", str(ep))
                 if os.path.isdir(csv_dir):

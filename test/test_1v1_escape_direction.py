@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=100)
+    parser.add_argument("--episodes-per-scenario", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
@@ -115,7 +115,7 @@ def main() -> None:
     d_jitter = max(0.0, float(args.distance_jitter_km))
     y_jitter = max(0.0, float(args.lateral_jitter_km))
     distances = list(range(args.min_distance_km, args.max_distance_km + 1, args.distance_step_km))
-    angles = list(range(0, 361, args.angle_step_deg))
+    angles = [angle for angle in range(0, 361, args.angle_step_deg) if angle != 360]
     scenarios = [
         {
             "scenario_name": f"d{distance:02d}_h{angle:03d}",
