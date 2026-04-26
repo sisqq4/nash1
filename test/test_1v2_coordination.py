@@ -140,6 +140,7 @@ def _build_scenarios() -> list[dict[str, object]]:
         "red_launch_x_max": 0.0,
         "red_launch_y_min": 0.0,
         "red_launch_y_max": 0.0,
+
     }
 
     scenarios: list[dict[str, object]] = []
@@ -209,7 +210,7 @@ def main() -> None:
     scenarios = _build_scenarios()
     all_rows, step_rows = run_scenario_sweep_multi_diagnostics(
         checkpoint_path=checkpoint_path,
-        output_root=str(Path("outputs") / "tests_1v2_coordination_coop"),
+        output_root=str(Path("outputs") / "tests_1v2_coordination_coop_newtest"),
         scenarios=scenarios,
         episodes_per_scenario=args.episodes_per_scenario,
         seed=args.seed,
@@ -286,7 +287,7 @@ def main() -> None:
             }
         )
 
-    results_dir = Path("outputs") / "tests_1v2_coordination_coop" / "results"
+    results_dir = Path("outputs") / "tests_1v2_coordination_coop_newtest" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(results_dir / "result_1v2_coordination_compare.csv", result_rows)
     _plot_diagnostics(step_rows, results_dir)

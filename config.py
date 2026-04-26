@@ -77,7 +77,7 @@ class EnvConfig:
     missile_max_flight_time: float = 120.0   # [s]
 
     # Hit radius (warhead lethal radius, km)
-    hit_radius: float = 0.015  # ~15 m
+    hit_radius: float = 0.005  # ~15 m
 
     # Game-theoretic launcher (position + launch time)
     candidate_launch_count: int = 32

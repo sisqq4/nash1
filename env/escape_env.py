@@ -531,6 +531,11 @@ class EscapeEnv:
             self.missile_model.dt = missile_dt
             try:
                 for sub_idx in range(substeps):
+                    frac0 = sub_idx / substeps
+                    frac1 = (sub_idx + 1) / substeps
+                    blue_sub_start = prev_blue_pos + frac0 * (self.blue_pos - prev_blue_pos)
+                    blue_sub_end = prev_blue_pos + frac1 * (self.blue_pos - prev_blue_pos)
+                    blue_sub_vel = prev_blue_vel + frac1 * (self.blue_vel - prev_blue_vel)
                     target_accel_est = (self.blue_vel - prev_blue_vel) / max(dt, 1e-6)
                     coordination_bias = self._compute_coordination_bias(
                         guidance_active=guidance_active,
@@ -542,18 +547,14 @@ class EscapeEnv:
                         self.missile_pos[idx_launched],
                         self.missile_vel[idx_launched],
                         self.missile_speed[idx_launched],
-                        self.blue_pos,
-                        self.blue_vel,
+                        blue_sub_end,
+                        blue_sub_vel,
                         nav_gains_effective[idx_launched],
                         max_overload_g=max_overload[idx_launched],
                         coordination_bias=coordination_bias[idx_launched],
                     )
                     self.missile_pos[idx_launched] = sub_pos
                     self.missile_vel[idx_launched] = sub_vel
-                    frac0 = sub_idx / substeps
-                    frac1 = (sub_idx + 1) / substeps
-                    blue_sub_start = prev_blue_pos + frac0 * (self.blue_pos - prev_blue_pos)
-                    blue_sub_end = prev_blue_pos + frac1 * (self.blue_pos - prev_blue_pos)
                     sub_hit, sub_min_dist, sub_hit_idx = self._check_hits_between_states(
                         blue_start=blue_sub_start,
                         blue_end=blue_sub_end,
