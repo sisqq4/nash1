@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lateral-jitter-km", type=float, default=0.3, help="初始横向扰动范围(±km)")
     parser.add_argument("--min-distance-km", type=int, default=6)
     parser.add_argument("--max-distance-km", type=int, default=30)
-    parser.add_argument("--distance-step-km", type=int, default=3)
+    parser.add_argument("--distance-step-km", type=int, default=2)
     parser.add_argument("--angle-step-deg", type=int, default=90)
     return parser.parse_args()
 

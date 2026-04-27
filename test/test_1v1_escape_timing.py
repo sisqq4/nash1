@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default="20260323_215046")
     parser.add_argument("--episode", type=int, default=None)
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint_ep1000.pt")
-    parser.add_argument("--episodes-per-scenario", type=int, default=100)
+    parser.add_argument("--episodes-per-scenario", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--reward-mode", type=str, default=None)
     parser.add_argument("--blue-eval-policy", type=str, choices=["dqn", "bt"], default="dqn")
@@ -110,14 +110,14 @@ def main() -> None:
 
     all_rows = run_scenario_sweep(
         checkpoint_path=checkpoint_path,
-        output_root=str(Path("outputs") / "tests_1v1_escape_timing_dqn"),
+        output_root=str(Path("outputs") / "tests_1v1_escape_timing_bt"),
         scenarios=scenarios,
         episodes_per_scenario=args.episodes_per_scenario,
         seed=args.seed,
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy="dqn",
+        blue_eval_policy="bt",
     )
 
     grouped: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
@@ -163,7 +163,7 @@ def main() -> None:
             }
         )
 
-    results_dir = Path("outputs") / "tests_1v1_escape_timing_dqn" / "results"
+    results_dir = Path("outputs") / "tests_1v1_escape_timing_bt" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(results_dir / "result_timing_distance_scan.csv", result_rows)
     _plot_timing(result_rows, results_dir)
