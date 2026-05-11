@@ -361,9 +361,34 @@ def run_scenario_sweep_multi_diagnostics(
 
         sc_env_cfg = EnvConfig()
         apply_config(sc_env_cfg, asdict(env_cfg))
-        for k, v in scenario.get("env_overrides", {}).items():
+        env_overrides = dict(scenario.get("env_overrides", {}))
+        for k, v in env_overrides.items():
             if hasattr(sc_env_cfg, k):
                 setattr(sc_env_cfg, k, v)
+        blue_position_keys = {
+            "blue_x_min",
+            "blue_x_max",
+            "blue_y_min",
+            "blue_y_max",
+            "blue_z_min",
+            "blue_z_max",
+        }
+        if "blue_fixed_start" not in env_overrides and any(
+            k in blue_position_keys for k in env_overrides
+        ):
+            # Scenario sweeps express the intended blue initial position through
+            # blue_*_min/max ranges. Checkpoints may have been trained with
+            # blue_fixed_start=True (for example at x=0), so disable the fixed
+            # checkpoint start unless the scenario explicitly asks for it.
+            sc_env_cfg.blue_fixed_start = False
+        if (
+            "missile_spawn_mode" not in env_overrides
+            and any(k.startswith("red_launch_") for k in env_overrides)
+        ):
+            # Scenario sweeps describe red launch geometry with red_launch_*;
+            # use the launcher-backed mode so those per-scenario policies take
+            # effect instead of falling back to the fixed missile_spawn_* point.
+            sc_env_cfg.missile_spawn_mode = "game_theory"
         sc_env_cfg.save_dir = scenario_dir
         sc_env_cfg.log_trajectories = True
 
