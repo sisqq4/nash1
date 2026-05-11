@@ -177,8 +177,11 @@ class EscapeEnv:
         self.blue_vel = v_dir * self.cfg.blue_max_speed
 
         # Red missile spawn and launch time profile.
-        self.missile_pos = self._sample_missile_spawn_positions()
-        self.missile_launch_times = self._sample_launch_times(self.cfg.num_missiles)
+        # In game-theory mode, recompute the red launch plan on every reset so
+        # scenario-level red_launch_* overrides and the current blue initial
+        # state actually affect the ACMI tracks. Fixed/annulus modes keep their
+        # original sampling behaviour.
+        self.missile_pos, self.missile_launch_times = self._sample_red_launch_profile()
         self.missile_launched[:] = False
 
         # Velocities start at zero (not yet launched)
@@ -739,14 +742,50 @@ class EscapeEnv:
         self.prev_blue_vel = self.blue_vel.copy()
         return float(reward)
 
+    def _sample_red_launch_profile(self) -> Tuple[np.ndarray, np.ndarray]:
+        mode = str(self.cfg.missile_spawn_mode).strip().lower()
+        if mode == "game_theory":
+            self._sync_launcher_region()
+            launch_pos, launch_times = self.launcher.compute_launch_plan(
+                blue_initial_pos=self.blue_pos,
+                blue_speed=float(np.linalg.norm(self.blue_vel)),
+                missile_speed=float(self.cfg.missile_speed),
+            )
+            return launch_pos.astype(float), launch_times.astype(float)
+
+        return self._sample_missile_spawn_positions(), self._sample_launch_times(self.cfg.num_missiles)
+
+    def _sync_launcher_region(self) -> None:
+        """Keep the launcher region aligned with mutable EnvConfig overrides."""
+        region = self.launcher.region
+        region.num_missiles = self.cfg.num_missiles
+        region.candidate_launch_count = self.cfg.candidate_launch_count
+        region.x_min = self.cfg.red_launch_x_min
+        region.x_max = self.cfg.red_launch_x_max
+        region.y_min = self.cfg.red_launch_y_min
+        region.y_max = self.cfg.red_launch_y_max
+        region.z_min = self.cfg.red_launch_z_min
+        region.z_max = self.cfg.red_launch_z_max
+        region.num_blue_strategies = self.cfg.num_blue_strategies
+        region.fictitious_iters = self.cfg.fictitious_iters
+        region.blue_escape_distance = self.cfg.blue_escape_distance
+        region.max_launch_time = self.cfg.max_launch_time
+        region.min_launch_interval = self.cfg.min_launch_interval
+
     def _sample_missile_spawn_positions(self) -> np.ndarray:
-        if self.cfg.missile_spawn_mode != "annulus":
+        mode = str(self.cfg.missile_spawn_mode).strip().lower()
+        if mode == "fixed_point":
             fixed_spawn = np.array(
                 [self.cfg.missile_spawn_x, self.cfg.missile_spawn_y, self.cfg.missile_spawn_z],
                 dtype=float,
             )
             return np.repeat(fixed_spawn[None, :], self.cfg.num_missiles, axis=0)
 
+        if mode != "annulus":
+            raise ValueError(
+                f"Unsupported missile_spawn_mode={self.cfg.missile_spawn_mode!r}; "
+                "expected 'fixed_point', 'annulus', or 'game_theory'."
+            )
         radii = self.rng.uniform(self.cfg.missile_spawn_radius_min, self.cfg.missile_spawn_radius_max, self.cfg.num_missiles)
         bearings = self.rng.uniform(-math.pi, math.pi, self.cfg.num_missiles)
         alts = self.rng.uniform(self.cfg.missile_spawn_alt_min, self.cfg.missile_spawn_alt_max, self.cfg.num_missiles)
