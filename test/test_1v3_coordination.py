@@ -41,6 +41,22 @@ def _write_csv(path: Path, rows: list[dict[str, float]]) -> None:
         writer.writerows(rows)
 
 
+def _fixed_profile(
+    base: dict[str, object],
+    positions: list[list[float]],
+    launch_times: list[float],
+    **extra: object,
+) -> dict[str, object]:
+    return {
+        **base,
+        "missile_fixed_positions": positions,
+        "missile_fixed_launch_times": launch_times,
+        "missile_launch_time_std": 0.0,
+        "missile_launch_time_clip": 0.0,
+        **extra,
+    }
+
+
 def _build_scenarios() -> list[dict[str, object]]:
     base = {
         "num_missiles": 3,
@@ -51,6 +67,10 @@ def _build_scenarios() -> list[dict[str, object]]:
         "blue_y_max": 0.0,
         "blue_z_min": 10.0,
         "blue_z_max": 10.0,
+        # Force a randomized initial nose/velocity direction in the xoy plane,
+        # even when the loaded training checkpoint used a fixed +x heading.
+        "blue_heading_min": -180.0,
+        "blue_heading_max": 180.0,
         "hit_radius": 0.005,
     }
     return [
@@ -58,46 +78,82 @@ def _build_scenarios() -> list[dict[str, object]]:
             "scenario_name": "fan_sparse",
             "family": "fan_encirclement",
             "sub_type": "sparse_fan",
-            "env_overrides": {**base, "red_launch_x_min": -4.0, "red_launch_x_max": 3.0, "red_launch_y_min": -14.0, "red_launch_y_max": 8.0, "red_launch_z_min": 9.0, "red_launch_z_max": 11.0, "missile_launch_time_std": 0.6},
+            "env_overrides": _fixed_profile(
+                base,
+                [[-4.0, -14.0, 9.8], [-6.0, 0.0, 10.0], [-4.0, 14.0, 10.2]],
+                [0.0, 1.0, 2.0],
+            ),
         },
         {
             "scenario_name": "fan_half_closed",
             "family": "fan_encirclement",
             "sub_type": "half_closed_fan",
-            "env_overrides": {**base, "red_launch_x_min": -2.0, "red_launch_x_max": 2.0, "red_launch_y_min": -10.0, "red_launch_y_max": 10.0, "red_launch_z_min": 9.0, "red_launch_z_max": 11.0, "missile_launch_time_std": 0.35},
+            "env_overrides": _fixed_profile(
+                base,
+                [[-2.0, -10.0, 9.7], [0.0, 0.0, 10.0], [-2.0, 10.0, 10.3]],
+                [0.0, 0.5, 1.0],
+            ),
         },
         {
             "scenario_name": "fan_near_closed",
             "family": "fan_encirclement",
             "sub_type": "near_closed_fan",
-            "env_overrides": {**base, "red_launch_x_min": -1.0, "red_launch_x_max": 1.0, "red_launch_y_min": -9.0, "red_launch_y_max": 9.0, "red_launch_z_min": 9.5, "red_launch_z_max": 10.5, "missile_launch_time_std": 0.15},
+            "env_overrides": _fixed_profile(
+                base,
+                [[1.0, -8.0, 9.8], [0.0, 0.0, 10.0], [1.0, 8.0, 10.2]],
+                [0.0, 0.15, 0.30],
+            ),
         },
         {
             "scenario_name": "triangle_static",
             "family": "triangle_encirclement",
             "sub_type": "static_triangle",
-            "env_overrides": {**base, "red_launch_x_min": -3.0, "red_launch_x_max": 3.0, "red_launch_y_min": -10.0, "red_launch_y_max": 10.0, "missile_launch_time_std": 0.5},
+            "env_overrides": _fixed_profile(
+                base,
+                [[2.0, -12.0, 10.0], [-2.0, 0.0, 10.0], [2.0, 12.0, 10.0]],
+                [0.0, 0.0, 0.0],
+            ),
         },
         {
             "scenario_name": "triangle_dynamic_closure",
             "family": "triangle_encirclement",
             "sub_type": "dynamic_triangle",
-            "env_overrides": {**base, "red_launch_x_min": -2.0, "red_launch_x_max": 2.0, "red_launch_y_min": -8.0, "red_launch_y_max": 8.0, "missile_launch_time_std": 0.2, "nav_gain": 5.0},
+            "env_overrides": _fixed_profile(
+                base,
+                [[4.0, -10.0, 9.8], [2.0, 0.0, 10.0], [4.0, 10.0, 10.2]],
+                [0.0, 0.15, 0.30],
+                nav_gain=5.0,
+                missile_nav_gains=[5.0, 5.0, 5.0],
+            ),
         },
         {
             "scenario_name": "two_near_one_far_exit_block",
             "family": "mixed_range",
             "sub_type": "two_near_one_far",
-            "env_overrides": {**base, "red_launch_x_min": -8.0, "red_launch_x_max": 1.0, "red_launch_y_min": -12.0, "red_launch_y_max": 6.0, "missile_launch_time_std": 0.5},
+            "env_overrides": _fixed_profile(
+                base,
+                [[4.0, -6.0, 10.0], [4.0, 6.0, 10.0], [-8.0, 0.0, 10.0]],
+                [0.0, 0.0, 0.5],
+            ),
         },
         {
             "scenario_name": "dynamic_disturbance_online_replan_1v3",
             "family": "dynamic_disturbance",
             "sub_type": "param_noise_delay",
-            "env_overrides": {**base, "red_launch_x_min": -2.0, "red_launch_x_max": 2.0, "red_launch_y_min": -10.0, "red_launch_y_max": 10.0, "missile_speed_decay_factor": 0.982, "missile_seeker_fov_deg": 40.0, "missile_seeker_memory_time": 1.0, "blue_accel": 0.078, "missile_launch_time_std": 0.4},
+            "env_overrides": _fixed_profile(
+                base,
+                [[-2.0, -10.0, 9.8], [0.0, 0.0, 10.0], [-2.0, 10.0, 10.2]],
+                [0.0, 0.4, 0.8],
+                missile_speed_decay_factor=0.982,
+                missile_speed_decay_factor_by_missile=[0.982, 0.990, 0.975],
+                missile_seeker_fov_deg=40.0,
+                missile_seeker_fov_deg_by_missile=[40.0, 35.0, 45.0],
+                missile_seeker_memory_time=1.0,
+                missile_seeker_memory_time_by_missile=[1.0, 0.8, 1.2],
+                blue_accel=0.078,
+            ),
         },
     ]
-
 
 def _plot_core(step_rows: list[dict[str, float]], out_dir: Path) -> None:
     metrics = ["corridor_width", "tgo_std", "encirclement", "active_missiles"]

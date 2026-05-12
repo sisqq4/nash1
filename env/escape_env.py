@@ -188,8 +188,15 @@ class EscapeEnv:
         self.missile_vel.fill(0.0)
         self.missile_speed.fill(0.0)
         self.missile_initial_speed.fill(0.0)
-        self.nav_gains.fill(self.cfg.nav_gain)
-        if self.initial_nav_gains.shape[0] != self.cfg.num_missiles:
+        configured_nav_gains = getattr(self.cfg, "missile_nav_gains", None)
+        if configured_nav_gains is not None:
+            gains = np.asarray(configured_nav_gains, dtype=float)
+            if gains.shape[0] != self.cfg.num_missiles:
+                raise ValueError(
+                    f"missile_nav_gains must contain {self.cfg.num_missiles} values, got {gains.shape[0]}"
+                )
+            self.initial_nav_gains = gains.copy()
+        elif self.initial_nav_gains.shape[0] != self.cfg.num_missiles:
             self.initial_nav_gains = np.full(self.cfg.num_missiles, self.cfg.nav_gain, dtype=float)
         self.nav_gains = self.initial_nav_gains.copy()
 
@@ -327,7 +334,11 @@ class EscapeEnv:
         # 3) Seeker constraints (FOV, memory, terminal blind zone)
         guidance_active = np.zeros(self.cfg.num_missiles, dtype=bool)
         fov_in_view = np.zeros(self.cfg.num_missiles, dtype=bool)
-        fov_cos = math.cos(math.radians(self.cfg.missile_seeker_fov_deg))
+        fov_deg = self._optional_cfg_array("missile_seeker_fov_deg_by_missile", self.cfg.missile_seeker_fov_deg)
+        memory_time = self._optional_cfg_array(
+            "missile_seeker_memory_time_by_missile", self.cfg.missile_seeker_memory_time
+        )
+        fov_cos = np.cos(np.radians(fov_deg))
         blind_range_km = self.cfg.missile_terminal_blind_range_km
         for i in range(self.cfg.num_missiles):
             if not (self.missile_launched[i] and self.missile_alive[i]):
@@ -346,13 +357,13 @@ class EscapeEnv:
                 fov_in_view[i] = True
                 continue
             cos_angle = float(np.dot(self.missile_vel[i], rel) / (vel_norm * rel_norm))
-            if cos_angle >= fov_cos:
+            if cos_angle >= fov_cos[i]:
                 self.missile_seeker_lost_time[i] = 0.0
                 guidance_active[i] = True
                 fov_in_view[i] = True
             else:
                 self.missile_seeker_lost_time[i] += dt
-                if self.missile_seeker_lost_time[i] > self.cfg.missile_seeker_memory_time:
+                if self.missile_seeker_lost_time[i] > memory_time[i]:
                     self.missile_alive[i] = False
                     self.nav_gains[i] = 0.0
                     self.missile_vel[i] = 0.0
@@ -422,6 +433,7 @@ class EscapeEnv:
         # 4) Update missile speed profiles for launched & alive missiles
         idx_active = np.where(self.missile_launched & self.missile_alive)[0]
         max_overload = np.full(self.cfg.num_missiles, self.cfg.missile_max_overload_g, dtype=float)
+        decay_factor = self._optional_cfg_array("missile_speed_decay_factor_by_missile", 1.0)
         if idx_active.size > 0:
             for i in idx_active:
                 speed = float(self.missile_speed[i])
@@ -452,6 +464,9 @@ class EscapeEnv:
                 )
                 drag = self._missile_drag_decel(self.missile_pos[i, 2], speed, total_g)
                 speed = max(speed - drag * dt, 0.0)
+                if decay_factor[i] > 0.0 and decay_factor[i] != 1.0:
+                    interval = max(float(self.cfg.missile_speed_decay_interval), 1e-12)
+                    speed *= float(decay_factor[i]) ** (dt / interval)
 
                 if speed < self.cfg.missile_stall_speed:
                     self.missile_alive[i] = False
@@ -742,7 +757,43 @@ class EscapeEnv:
         self.prev_blue_vel = self.blue_vel.copy()
         return float(reward)
 
+    def _optional_cfg_array(self, name: str, default: float) -> np.ndarray:
+        values = getattr(self.cfg, name, None)
+        if values is None:
+            return np.full(self.cfg.num_missiles, default, dtype=float)
+        arr = np.asarray(values, dtype=float)
+        if arr.shape[0] != self.cfg.num_missiles:
+            raise ValueError(f"{name} must contain {self.cfg.num_missiles} values, got {arr.shape[0]}")
+        return arr.astype(float)
+
+    def _fixed_launch_positions(self) -> np.ndarray | None:
+        fixed_positions = getattr(self.cfg, "missile_fixed_positions", None)
+        if fixed_positions is None:
+            return None
+        arr = np.asarray(fixed_positions, dtype=float)
+        expected = (self.cfg.num_missiles, 3)
+        if arr.shape != expected:
+            raise ValueError(f"missile_fixed_positions must have shape {expected}, got {arr.shape}")
+        return arr.astype(float)
+
+    def _fixed_launch_times(self) -> np.ndarray | None:
+        fixed_times = getattr(self.cfg, "missile_fixed_launch_times", None)
+        if fixed_times is None:
+            return None
+        arr = np.asarray(fixed_times, dtype=float)
+        expected = (self.cfg.num_missiles,)
+        if arr.shape != expected:
+            raise ValueError(f"missile_fixed_launch_times must have shape {expected}, got {arr.shape}")
+        return arr.astype(float)
+
     def _sample_red_launch_profile(self) -> Tuple[np.ndarray, np.ndarray]:
+        fixed_pos = self._fixed_launch_positions()
+        fixed_times = self._fixed_launch_times()
+        if fixed_pos is not None or fixed_times is not None:
+            launch_pos = fixed_pos if fixed_pos is not None else self._sample_missile_spawn_positions()
+            launch_times = fixed_times if fixed_times is not None else self._sample_launch_times(self.cfg.num_missiles)
+            return launch_pos.astype(float), launch_times.astype(float)
+
         mode = str(self.cfg.missile_spawn_mode).strip().lower()
         if mode == "game_theory":
             self._sync_launcher_region()
