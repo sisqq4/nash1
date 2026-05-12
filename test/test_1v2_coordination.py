@@ -170,16 +170,17 @@ def main() -> None:
     )
 
     scenarios = _build_scenarios()
+    output_root = Path("outputs") / f"tests_1v2_coordination_{args.blue_eval_policy}"
     all_rows, step_rows = run_scenario_sweep_multi_diagnostics(
         checkpoint_path=checkpoint_path,
-        output_root=str(Path("outputs") / "tests_1v2_coordination_bt"),
+        output_root=str(output_root),
         scenarios=scenarios,
         episodes_per_scenario=args.episodes_per_scenario,
         seed=args.seed,
         checkpoint_interval=10,
         report_interval=10,
         reward_mode=args.reward_mode,
-        blue_eval_policy="bt",
+        blue_eval_policy=args.blue_eval_policy,
         enable_step_diagnostics=True,
     )
 
@@ -224,7 +225,7 @@ def main() -> None:
             }
         )
 
-    results_dir = Path("outputs") / "tests_1v2_coordination_bt" / "results"
+    results_dir = output_root / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(results_dir / "result_1v2_coordination.csv", result_rows)
     _plot_diagnostics(step_rows, results_dir)

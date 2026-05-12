@@ -66,6 +66,7 @@ class DQNAgent:
         self.epsilon_end = cfg.epsilon_end
         self.epsilon_decay = cfg.epsilon_decay
         self.total_steps = 0
+        self.loaded_from_checkpoint = False
 
         self.target_update_interval = cfg.target_update_interval
 
@@ -79,7 +80,23 @@ class DQNAgent:
         }
 
     def load_state(self, state: Dict[str, Any]) -> None:
-        self.q_net.load_state_dict(state["q_net"])
+        q_state = state["q_net"]
+        first_weight = q_state.get("net.0.weight")
+        last_weight = q_state.get("net.4.weight")
+        if first_weight is not None and int(first_weight.shape[1]) != self.cfg.obs_dim:
+            raise ValueError(
+                "Checkpoint observation dimension does not match the current DQN model: "
+                f"checkpoint obs_dim={int(first_weight.shape[1])}, current obs_dim={self.cfg.obs_dim}. "
+                "Ensure EnvConfig.num_missiles matches the checkpoint, or use blue_eval_policy=bt "
+                "when the DQN policy is not being evaluated."
+            )
+        if last_weight is not None and int(last_weight.shape[0]) != self.cfg.action_dim:
+            raise ValueError(
+                "Checkpoint action dimension does not match the current DQN model: "
+                f"checkpoint action_dim={int(last_weight.shape[0])}, current action_dim={self.cfg.action_dim}."
+            )
+
+        self.q_net.load_state_dict(q_state)
         target_state = state.get("target_q_net")
         if target_state is None:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
@@ -92,6 +109,7 @@ class DQNAgent:
         replay_state = state.get("replay")
         if replay_state is not None:
             self.replay.load_state(replay_state)
+        self.loaded_from_checkpoint = True
 
     def _epsilon(self, eval_mode: bool) -> float:
         if eval_mode:
