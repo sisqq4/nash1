@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 @dataclass
 class EnvConfig:
@@ -59,6 +59,15 @@ class EnvConfig:
     missile_spawn_alt_max: float = 13.0
     missile_launch_time_std: float = 0.5
     missile_launch_time_clip: float = 2.0
+    # Optional deterministic per-missile evaluation profiles.  When left as
+    # None, training and existing randomized tests keep their original launch
+    # sampling and shared seeker/guidance parameters.
+    missile_fixed_positions: Optional[List[List[float]]] = None
+    missile_fixed_launch_times: Optional[List[float]] = None
+    missile_nav_gains: Optional[List[float]] = None
+    missile_seeker_fov_deg_by_missile: Optional[List[float]] = None
+    missile_seeker_memory_time_by_missile: Optional[List[float]] = None
+    missile_speed_decay_factor_by_missile: Optional[List[float]] = None
     nav_gain: float = 4.5
     missile_max_overload_g: float = 45.0  # max lateral load factor [g] (40-50g target)
     missile_cd: float = 0.28

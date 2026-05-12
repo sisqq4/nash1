@@ -41,71 +41,100 @@ def _write_csv(path: Path, rows: list[dict[str, float]]) -> None:
         writer.writerows(rows)
 
 
+def _fixed_profile(
+    base: dict[str, object],
+    positions: list[list[float]],
+    launch_times: list[float],
+    **extra: object,
+) -> dict[str, object]:
+    return {
+        **base,
+        "missile_fixed_positions": positions,
+        "missile_fixed_launch_times": launch_times,
+        "missile_launch_time_std": 0.0,
+        "missile_launch_time_clip": 0.0,
+        **extra,
+    }
+
+
 def _build_scenarios() -> list[dict[str, object]]:
     base = {
         "num_missiles": 2,
         "missile_update_dt": 0.01,
-        "blue_x_min": 18.0,
-        "blue_x_max": 18.0,
+        "blue_x_min": 20.0,
+        "blue_x_max": 20.0,
         "blue_y_min": 0.0,
         "blue_y_max": 0.0,
         "blue_z_min": 10.0,
         "blue_z_max": 10.0,
-        "red_launch_z_min": 10.0,
-        "red_launch_z_max": 10.0,
+        # Force a randomized initial nose/velocity direction in the xoy plane,
+        # even when the loaded training checkpoint used a fixed +x heading.
+        "blue_heading_min": -180.0,
+        "blue_heading_max": 180.0,
         "hit_radius": 0.005,
     }
+    same_direction = [[0.0, -1.0, 10.0], [0.0, 1.0, 10.0]]
     return [
         {
             "scenario_name": "time_same_direction_large_delta_t",
             "family": "time_coord",
             "sub_type": "same_direction_large_dt",
-            "env_overrides": {**base, "red_launch_x_min": 0.0, "red_launch_x_max": 0.0, "red_launch_y_min": -2.0, "red_launch_y_max": 2.0, "missile_launch_time_std": 1.5, "missile_launch_time_clip": 2.5},
+            "env_overrides": _fixed_profile(base, same_direction, [0.0, 5.0]),
         },
         {
             "scenario_name": "time_same_direction_medium_delta_t",
             "family": "time_coord",
             "sub_type": "same_direction_mid_dt",
-            "env_overrides": {**base, "red_launch_x_min": 0.0, "red_launch_x_max": 0.0, "red_launch_y_min": -1.5, "red_launch_y_max": 1.5, "missile_launch_time_std": 0.8, "missile_launch_time_clip": 1.2},
+            "env_overrides": _fixed_profile(base, same_direction, [0.0, 3.0]),
         },
         {
             "scenario_name": "time_same_direction_near_sync",
             "family": "time_coord",
             "sub_type": "same_direction_sync",
-            "env_overrides": {**base, "red_launch_x_min": 0.0, "red_launch_x_max": 0.0, "red_launch_y_min": -1.0, "red_launch_y_max": 1.0, "missile_launch_time_std": 0.15, "missile_launch_time_clip": 0.25},
+            "env_overrides": _fixed_profile(base, same_direction, [0.0, 1.0]),
         },
         {
             "scenario_name": "space_pincer_symmetric",
             "family": "space_coord",
             "sub_type": "dual_pincer_symmetric",
-            "env_overrides": {**base, "red_launch_x_min": -1.0, "red_launch_x_max": 1.0, "red_launch_y_min": -8.0, "red_launch_y_max": 8.0, "missile_launch_time_std": 0.4},
+            "env_overrides": _fixed_profile(base, [[5.0, 5.0, 10.0], [5.0, -5.0, 10.0]], [0.0, 0.0]),
         },
         {
             "scenario_name": "space_pincer_asymmetric",
             "family": "space_coord",
             "sub_type": "dual_pincer_asymmetric",
-            "env_overrides": {**base, "red_launch_x_min": -2.0, "red_launch_x_max": 2.0, "red_launch_y_min": -12.0, "red_launch_y_max": 6.0, "missile_launch_time_std": 0.6},
+            "env_overrides": _fixed_profile(base, [[5.0, 5.0, 10.0], [7.0, -7.0, 10.0]], [0.0, 0.0]),
         },
         {
             "scenario_name": "space_pincer_high_low",
             "family": "space_coord",
             "sub_type": "dual_pincer_high_low",
-            "env_overrides": {**base, "red_launch_x_min": -1.0, "red_launch_x_max": 1.0, "red_launch_y_min": -6.0, "red_launch_y_max": 9.0, "red_launch_z_min": 8.0, "red_launch_z_max": 12.0, "missile_launch_time_std": 0.4},
+            "env_overrides": _fixed_profile(base, [[5.0, 5.0, 12.0], [5.0, -5.0, 8.0]], [0.0, 0.0]),
         },
         {
             "scenario_name": "spatiotemporal_pincer_sync_compress",
             "family": "spatiotemporal_coord",
             "sub_type": "pincer_sync_compress",
-            "env_overrides": {**base, "red_launch_x_min": 0.0, "red_launch_x_max": 0.0, "red_launch_y_min": -9.0, "red_launch_y_max": 9.0, "missile_launch_time_std": 0.1, "missile_launch_time_clip": 0.15},
+            "env_overrides": _fixed_profile(base, [[5.0, 12.0, 10.0], [5.0, -12.0, 10.0]], [0.0, 0.0]),
         },
         {
             "scenario_name": "dynamic_disturbance_online_replan",
             "family": "dynamic_disturbance",
             "sub_type": "param_noise_delay",
-            "env_overrides": {**base, "red_launch_x_min": 0.0, "red_launch_x_max": 3.0, "red_launch_y_min": -8.0, "red_launch_y_max": 8.0, "missile_speed_decay_factor": 0.985, "missile_seeker_fov_deg": 45.0, "missile_seeker_memory_time": 1.2, "blue_accel": 0.08, "missile_launch_time_std": 0.7},
+            "env_overrides": _fixed_profile(
+                base,
+                [[2.0, -8.0, 9.8], [2.0, 8.0, 10.2]],
+                [0.0, 0.7],
+                missile_speed_decay_factor=0.985,
+                missile_speed_decay_factor_by_missile=[0.985, 0.985],
+                missile_seeker_fov_deg=45.0,
+                missile_seeker_fov_deg_by_missile=[45.0, 45.0],
+                missile_seeker_memory_time=1.2,
+                missile_seeker_memory_time_by_missile=[1.2, 1.2],
+                blue_accel=0.08,
+            ),
         },
     ]
-
 
 def _plot_diagnostics(step_rows: list[dict[str, float]], out_dir: Path) -> None:
     metrics = ["primary_threat_id", "corridor_width", "tgo_std", "active_missiles"]
