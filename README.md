@@ -129,3 +129,49 @@ python train_blue_agent.py
    - 红方仍使用博弈论导引区域 + 简单导弹模型。
 
 当前版本旨在给出一个**干净、模块化、可运行训练的最小架构**，方便你在此基础上不断替换/升级各个模块。
+
+---
+
+## 五、测试时切换蓝方策略（DQN / BT）
+
+各个评估脚本都提供 `--blue-eval-policy` 参数，用来选择蓝方飞机的评估策略：
+
+- `--blue-eval-policy dqn`：使用 checkpoint 中训练好的 DQN 强化学习策略。该模式会加载 `checkpoint` 内的 `blue` 参数，并要求 checkpoint 的观测维度与当前场景的 `num_missiles` 匹配。
+- `--blue-eval-policy bt`：使用规则/行为树（BT）基线策略。该模式不会加载 DQN 网络权重，适合在没有匹配 DQN checkpoint 或只想看规则策略表现时使用。
+
+参数默认值为 `dqn`。因此，如果要评估强化学习策略，可以显式写出：
+
+```bash
+python test/test_1v3_coordination.py --blue-eval-policy dqn
+```
+
+如果要切换到 BT 规则策略：
+
+```bash
+python test/test_1v3_coordination.py --blue-eval-policy bt
+```
+
+1v1 与 1v2 测试脚本使用同样的切换方式，例如：
+
+```bash
+python test/test_1v1_escape_direction.py --blue-eval-policy dqn
+python test/test_1v2_coordination.py --blue-eval-policy bt
+```
+
+输出目录会根据策略自动区分，避免 DQN 和 BT 的结果互相覆盖：
+
+- 1v3 DQN：`outputs/tests_1v3_coordination_dqn/`
+- 1v3 BT：`outputs/tests_1v3_coordination_bt/`
+
+对于 1v2/1v3 这类带逐步诊断的评估，`results/step_diagnostics.csv` 中会记录：
+
+- `blue_eval_policy`：本次实际使用的策略类型；
+- `blue_action`：每一步蓝方选择的离散动作编号；
+- `bt_state`：BT 模式下的行为树状态（如 `CRUISE`、`BEAM`、`BREAK`）；DQN 模式下为空。
+
+如果你期望使用强化学习训练结果，但看到蓝机动作很像规则策略或机动很弱，建议优先检查：
+
+1. 运行命令中是否写成了 `--blue-eval-policy dqn`；
+2. 输出目录是否是 `*_dqn`；
+3. `step_diagnostics.csv` 里的 `blue_eval_policy` 是否为 `dqn`；
+4. checkpoint 是否与当前测试场景的导弹数量一致，例如 1v3 场景需要匹配 `num_missiles=3` 的 DQN checkpoint。

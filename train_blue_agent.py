@@ -74,9 +74,15 @@ def load_checkpoint(
     load_red: bool = True,
 ) -> Dict[str, Any]:
     payload = torch.load(path, map_location=agent.device, weights_only=False)
-    if load_blue and "blue" in payload:
+    if load_blue:
+        if "blue" not in payload:
+            raise KeyError(f"Checkpoint does not contain requested blue agent state: {path}")
         agent.load_state(payload["blue"])
-    if load_red and "red" in payload:
+        if not getattr(agent, "loaded_from_checkpoint", False):
+            raise RuntimeError(f"Blue agent state was not marked as loaded after reading checkpoint: {path}")
+    if load_red:
+        if "red" not in payload:
+            raise KeyError(f"Checkpoint does not contain requested red parameters: {path}")
         env.set_red_params(payload["red"])
     return payload
 

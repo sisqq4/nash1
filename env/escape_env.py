@@ -281,7 +281,7 @@ class EscapeEnv:
         # 1) Update blue aircraft
         threat_pre = self._compute_threat()
         if threat_pre >= self.cfg.threat_maneuver_start:
-            self.threat_mode = False
+            self.threat_mode = True
         elif threat_pre <= self.cfg.threat_maneuver_stop:
             self.threat_mode = False
 

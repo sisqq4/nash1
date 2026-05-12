@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in os.sys.path:
 
 from config import EnvConfig, TrainConfig
 from agent.blue_bt_agent import BlueBTAgent, MissileSnapshot, PlaneSnapshot
+from env.escape_env import EscapeEnv
 from env.acmi_io import write_acmi
 from train_blue_agent import load_checkpoint, make_env_and_agent, save_checkpoint
 
@@ -272,6 +273,8 @@ def _select_eval_action(
     bt_agent: Optional[BlueBTAgent],
 ) -> int:
     if policy_name == "dqn":
+        if agent is None:
+            raise ValueError("blue_eval_policy=dqn 时 DQN agent 不能为空。")
         return int(agent.select_action(obs, eval_mode=True))
     if policy_name == "bt":
         if bt_agent is None:
@@ -337,16 +340,9 @@ def run_scenario_sweep_multi_diagnostics(
     with open(os.path.join(output_root, "config.json"), "w", encoding="utf-8") as f:
         json.dump({"env": asdict(env_cfg), "train": asdict(train_cfg)}, f, ensure_ascii=False, indent=2)
 
-    env, agent = make_env_and_agent(env_cfg, train_cfg, seed=seed)
-    # NOTE:
-    #   For evaluation we intentionally do NOT load red state from checkpoint.
-    #   Checkpoints are saved at episode end; red nav_gains in that snapshot may be
-    #   terminal values (e.g., zero after missiles expire), which would disable PN
-    #   in later tests. We keep red parameters from env_cfg/config.json so red uses
-    #   the same PN/drag/speed model settings as training-time configuration.
-    load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
-    agent.q_net.eval()
     policy_name = str(blue_eval_policy).strip().lower()
+    if policy_name not in {"dqn", "bt"}:
+        raise ValueError(f"未知 blue_eval_policy: {policy_name}")
     bt_agent = BlueBTAgent(uid="blue_eval_bt", team=0) if policy_name == "bt" else None
 
     all_rows: List[Dict[str, Any]] = []
@@ -392,8 +388,24 @@ def run_scenario_sweep_multi_diagnostics(
         sc_env_cfg.save_dir = scenario_dir
         sc_env_cfg.log_trajectories = True
 
-        env, _ = make_env_and_agent(sc_env_cfg, train_cfg, seed=seed + scenario_idx)
-        load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
+        if policy_name == "dqn":
+            env, agent = make_env_and_agent(sc_env_cfg, train_cfg, seed=seed + scenario_idx)
+            # NOTE:
+            #   For evaluation we intentionally do NOT load red state from checkpoint.
+            #   Checkpoints are saved at episode end; red nav_gains in that snapshot may be
+            #   terminal values (e.g., zero after missiles expire), which would disable PN
+            #   in later tests. We keep red parameters from env_cfg/config.json so red uses
+            #   the same PN/drag/speed model settings as training-time configuration.
+            #
+            #   The DQN network input dimension depends on num_missiles, so the agent must
+            #   be built after scenario overrides are applied. BT evaluation does not use
+            #   the DQN weights at all, so skip blue loading to avoid irrelevant checkpoint
+            #   shape mismatches when only the environment configuration is needed.
+            load_checkpoint(checkpoint_path, agent, env, load_blue=True, load_red=False)
+            agent.q_net.eval()
+        else:
+            env = EscapeEnv(sc_env_cfg, seed=seed + scenario_idx)
+            agent = None
 
         wins = 0
         for ep in range(1, episodes_per_scenario + 1):
@@ -429,6 +441,9 @@ def run_scenario_sweep_multi_diagnostics(
                             "scenario_name": scenario_name,
                             "episode": ep,
                             "global_episode": overall_episode,
+                            "blue_eval_policy": policy_name,
+                            "blue_action": int(action),
+                            "bt_state": "" if bt_agent is None else str(bt_agent.state),
                         }
                     )
                     step_rows_ep.append(sd)
