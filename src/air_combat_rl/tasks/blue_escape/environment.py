@@ -6,6 +6,7 @@ import numpy as np
 from air_combat_rl.domain.outcomes import Outcome
 from air_combat_rl.simulation.world import SimulationWorld
 from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
+from air_combat_rl.tasks.blue_escape.action_hold import HeldAction
 
 @dataclass(frozen=True, slots=True)
 class StepResult:
@@ -22,9 +23,10 @@ class BlueEscapeEnv:
         self.platform = platform
         self.max_time_s = max_time_s
         self.last_outcome = Outcome.RUNNING
+        self.held_action = HeldAction()
 
     def step(self, action_id: int) -> StepResult:
-        command = self.actions.command_for(action_id, self.platform)
+        command = self.held_action.select(action_id, self.platform, self.actions, self.world.clock)
         snapshot, events = self.world.step_policy_interval(command)
         outcome = Outcome.RUNNING
         if any(event.kind == "ground_collision" for event in events):

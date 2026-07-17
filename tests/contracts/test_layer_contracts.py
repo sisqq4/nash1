@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_blue_29_catalog_loads_and_validates():
     catalog = ActionCatalog.from_yaml(str(ROOT / "configs/actions/blue_29.yaml"))
-    assert catalog.version == "blue_29/v1"
-    assert catalog.command_for(0, "zdj").ny < 0
+    assert catalog.version == "blue_29/v2"
+    assert catalog.command_for(5, "zdj").gamma_s < 0
 
 
 def test_domain_dynamics_do_not_import_algorithm_or_rewards():
