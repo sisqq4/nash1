@@ -12,10 +12,28 @@ class FlightPathAngles:
 
 
 @dataclass(frozen=True, slots=True)
-class KinematicState:
+class FlightState:
+    """3-DoF flight state in SI units and [x,z,y,V,gamma,psi] order."""
+
     position: VecXZY
     speed: float
     angles: FlightPathAngles
+
+    def as_xzy_v_gamma_psi(self) -> tuple[float, float, float, float, float, float]:
+        return (*self.position.as_xzy(), self.speed, self.angles.gamma, self.angles.psi)
+
+    @classmethod
+    def from_xzy_v_gamma_psi(cls, values: tuple[float, ...] | list[float]) -> "FlightState":
+        if len(values) != 6:
+            raise ValueError("FlightState requires [x,z,y,V,gamma,psi]")
+        return cls(
+            position=VecXZY.from_xzy(values[:3]),
+            speed=float(values[3]),
+            angles=FlightPathAngles(gamma=float(values[4]), psi=float(values[5])),
+        )
+
+
+KinematicState = FlightState
 
 
 @dataclass(frozen=True, slots=True)
