@@ -1,0 +1,234 @@
+version: blue_29/v1
+actions:
+  - id: 0
+    name: left_dive_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: 210
+    expected_turn: left
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 1
+    name: left_dive_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: 210
+    expected_turn: left
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 2
+    name: left_dive_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: 210
+    expected_turn: left
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 3
+    name: left_level_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: 180
+    expected_turn: left
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 4
+    name: left_level_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: 180
+    expected_turn: left
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 5
+    name: left_level_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: 180
+    expected_turn: left
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 6
+    name: left_climb_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: 150
+    expected_turn: left
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 7
+    name: left_climb_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: 150
+    expected_turn: left
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 8
+    name: left_climb_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: 150
+    expected_turn: left
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 9
+    name: straight_dive_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: -90
+    expected_turn: straight
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 10
+    name: straight_dive_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: -90
+    expected_turn: straight
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 11
+    name: straight_dive_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: -90
+    expected_turn: straight
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 12
+    name: straight_level_nx_-0.5
+    nx: -0.5
+    nf: 0.0
+    gamma_s_deg: 0
+    expected_turn: straight
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 13
+    name: straight_level_nx_+0.0
+    nx: 0.0
+    nf: 0.0
+    gamma_s_deg: 0
+    expected_turn: straight
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 14
+    name: straight_level_nx_+0.5
+    nx: 0.5
+    nf: 0.0
+    gamma_s_deg: 0
+    expected_turn: straight
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 15
+    name: straight_climb_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: 90
+    expected_turn: straight
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 16
+    name: straight_climb_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: 90
+    expected_turn: straight
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 17
+    name: straight_climb_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: 90
+    expected_turn: straight
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 18
+    name: right_dive_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: -30
+    expected_turn: right
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 19
+    name: right_dive_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: -30
+    expected_turn: right
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 20
+    name: right_dive_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: -30
+    expected_turn: right
+    expected_vertical_motion: dive
+    allowed_platforms: [zdj, yjj]
+  - id: 21
+    name: right_level_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: 0
+    expected_turn: right
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 22
+    name: right_level_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: 0
+    expected_turn: right
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 23
+    name: right_level_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: 0
+    expected_turn: right
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 24
+    name: right_climb_nx_-0.5
+    nx: -0.5
+    nf: 1.0
+    gamma_s_deg: 30
+    expected_turn: right
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 25
+    name: right_climb_nx_+0.0
+    nx: 0.0
+    nf: 1.0
+    gamma_s_deg: 30
+    expected_turn: right
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 26
+    name: right_climb_nx_+0.5
+    nx: 0.5
+    nf: 1.0
+    gamma_s_deg: 30
+    expected_turn: right
+    expected_vertical_motion: climb
+    allowed_platforms: [zdj, yjj]
+  - id: 27
+    name: straight_level_extra_27
+    nx: 0.0
+    nf: 0.0
+    gamma_s_deg: 0
+    expected_turn: straight
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]
+  - id: 28
+    name: straight_level_extra_28
+    nx: 0.0
+    nf: 0.0
+    gamma_s_deg: 0
+    expected_turn: straight
+    expected_vertical_motion: level
+    allowed_platforms: [zdj, yjj]

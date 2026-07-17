@@ -1,0 +1,5 @@
+name: zdj
+min_speed: 120.0
+max_speed: 420.0
+min_altitude: 50.0
+max_altitude: 12000.0

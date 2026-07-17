@@ -1,0 +1,1 @@
+"""Reward component placeholder."""
