@@ -1,0 +1,7 @@
+mode: randomized_1v1
+seed: 0
+blue_altitude_m: [8000.0, 12000.0]
+max_episode_time_s: 60.0
+physics_dt: 0.005
+policy_dt: 0.1
+missile_count: 1

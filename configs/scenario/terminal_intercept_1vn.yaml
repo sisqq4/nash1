@@ -1,4 +1,6 @@
+mode: terminal_intercept
 name: terminal_intercept_1vn
 max_episode_time_s: 60.0
 physics_dt: 0.005
 policy_dt: 0.1
+missile_count: 4
