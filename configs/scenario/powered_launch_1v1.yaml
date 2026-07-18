@@ -1,3 +1,4 @@
+mode: powered_launch
 name: powered_launch_1v1
 max_episode_time_s: 60.0
 physics_dt: 0.005
