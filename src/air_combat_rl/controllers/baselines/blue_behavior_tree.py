@@ -49,6 +49,9 @@ class BlueBehaviorTreePolicy:
     state: str = "cruise"
     dwell_steps_remaining: int = 0
     break_sign: int = 1
+    _rng: random.Random | None = None
+    _cruise_heading: float | None = None
+    _cruise_gamma: float = 0.0
 
     def __post_init__(self) -> None:
         self._rng = random.Random(self.config.seed)
@@ -85,7 +88,7 @@ class BlueBehaviorTreePolicy:
             return _masked(action, action_mask)
         primary = obs.primary_threat(self.config.effective_threat_range_m)
         level = _threat_level(primary.distance_m, self.config) if primary is not None else 0
-        if self.dwell_steps_remaining > 0 and self.state in {"beam", "break"}:
+        if self.dwell_steps_remaining > 0 and self.state in {"beam", "break"} and not (self.state == "beam" and level == 3):
             self.dwell_steps_remaining -= 1
         else:
             if level == 3:
@@ -122,7 +125,7 @@ class BlueBehaviorTreePolicy:
             return A_DIVE if blue.position.y > self.config.speed_recovery_altitude_m else A_ACCEL
         primary, distance = _primary_threat(snapshot, self.config)
         level = _threat_level(distance, self.config) if primary is not None else 0
-        if self.dwell_steps_remaining > 0 and self.state in {"beam", "break"}:
+        if self.dwell_steps_remaining > 0 and self.state in {"beam", "break"} and not (self.state == "beam" and level == 3):
             self.dwell_steps_remaining -= 1
         else:
             if level == 3:
