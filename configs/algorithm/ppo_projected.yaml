@@ -1,0 +1,15 @@
+algorithm:
+  name: ppo_projected
+  action_interface: projected_continuous_to_discrete
+  action_dimension: 3
+ppo:
+  rollout_steps: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  learning_rate: 0.003
+  clip_range: 0.2
+  max_grad_norm: 0.5
+  target_kl: 0.03
+projection:
+  weights: {v: 1.0, gamma: 1.0, psi: 1.0}
+  scales: {v: 30.0, gamma: 0.5, psi: 0.5}

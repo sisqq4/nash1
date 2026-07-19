@@ -18,9 +18,13 @@ class StepResult:
     truncated: bool
     info: dict[str, object]
 
+class DiscreteSpace:
+    def __init__(self, n: int) -> None:
+        self.n = n
+
 class BlueEscapeEnv:
     def __init__(self, world: SimulationWorld, actions: ActionCatalog, platform: str, max_time_s: float = 60.0, max_policy_steps: int | None = None, m_max: int = 4) -> None:
-        self.world = world; self.actions = actions; self.platform = platform
+        self.world = world; self.actions = actions; self.platform = platform; self.action_space = DiscreteSpace(29)
         self.max_time_s = max_time_s; self.max_policy_steps = max_policy_steps
         self.last_outcome = Outcome.RUNNING; self.held_action = HeldAction(); self.policy_steps = 0
         self.observations = ObservationBuilder(ObservationConfig(m_max=m_max)); self.reward_model = EscapeReward(RewardConfig())

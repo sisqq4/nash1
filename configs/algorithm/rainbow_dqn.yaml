@@ -1,0 +1,9 @@
+algorithm:
+  name: rainbow_dqn
+  action_interface: discrete_29
+rainbow:
+  batch_size: 32
+  gamma: 0.99
+  learning_rate: 0.001
+  target_update_interval: 100
+  replay_capacity: 100000

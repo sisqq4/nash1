@@ -117,7 +117,8 @@ class EscapeReward:
             )
         elif bearing <= self.config.narrow_bearing_rad:
             mode = (
-                self.config.w_mid_small_azimuth * azimuth_score
+                self.config.w_mid_large_distance * delta_d
+                + self.config.w_mid_small_azimuth * azimuth_score
                 + self.config.w_mid_small_height * height
                 + self.config.w_mid_small_opposite * opposite
                 + self.config.w_mid_small_speed * speed
