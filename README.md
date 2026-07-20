@@ -43,3 +43,35 @@ PYTHONPATH=src python scripts/run_scenario.py \
 ```
 
 The command writes `manifest.json`, streaming `steps.jsonl`, and `episode_summary.json`. Use `--policy random_valid` to sample only currently legal masked actions with the supplied seed. A non-empty output directory is rejected unless `--overwrite` is passed.
+
+## Training algorithms
+
+The default training algorithm is `ppo_projected`.
+
+Projected PPO uses this action chain: observation → continuous Gaussian actor → sampled pre-tanh action → tanh-bounded action → physical command `[nx, nf, gamma_s]` → weighted projection over the current `action_mask` legal 29-action catalog → `action_id` → `BlueEscapeEnv.step(action_id)`. PPO `old_log_prob`, `new_log_prob`, and ratio are computed from the continuous pre-tanh sample with the tanh Jacobian correction, not from the final projected discrete `action_id`.
+
+Run the primary projected PPO path:
+
+```bash
+PYTHONPATH=src python scripts/train.py \
+  --scenario configs/scenario/fixed_1v1.yaml \
+  --actions configs/actions/blue_29.yaml \
+  --algorithm configs/algorithm/ppo_projected.yaml \
+  --platform zdj \
+  --seed 0 \
+  --output-dir runs/projected_ppo_fixed_1v1
+```
+
+Run the discrete PPO control path by replacing the algorithm file:
+
+```bash
+PYTHONPATH=src python scripts/train.py --scenario configs/scenario/fixed_1v1.yaml --actions configs/actions/blue_29.yaml --algorithm configs/algorithm/ppo_discrete.yaml --platform zdj --seed 0 --output-dir runs/discrete_ppo_fixed_1v1
+```
+
+Run the Rainbow DQN control path:
+
+```bash
+PYTHONPATH=src python scripts/train.py --scenario configs/scenario/fixed_1v1.yaml --actions configs/actions/blue_29.yaml --algorithm configs/algorithm/rainbow_dqn.yaml --platform zdj --seed 0 --output-dir runs/rainbow_dqn_fixed_1v1
+```
+
+Each run writes `manifest.json`, `train_metrics.jsonl`, `episodes.jsonl`, and atomic checkpoints under `checkpoints/latest.pt` plus interval `step_<N>.pt` files. Checkpoints include the algorithm name and are type-checked before algorithm-specific loading/resume code should accept them; do not load `ppo_projected`, `ppo_discrete`, and `rainbow_dqn` checkpoints across algorithm types.
