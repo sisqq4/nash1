@@ -20,5 +20,5 @@ class ProjectedContinuousActionWrapper:
         mask = self.base_env.actions.action_mask(self.base_env.platform); valid = [i for i,m in enumerate(mask) if m]
         mapped = self.mapper.map(state, projected, self.base_env.platform, valid)
         result = self.base_env.step(mapped.action_id)
-        result.info.update({"raw_continuous_action": raw, "bounded_continuous_action": bounded, "projected_continuous_action": projected, "executed_action_id": mapped.action_id, "executed_command": mapped.command, "projection_distance": mapped.distance, "valid_action_count": mapped.valid_action_count, "fallback_used": mapped.fallback_used})
+        result.info.update({"raw_continuous_action": raw, "bounded_continuous_action": raw.clip(-1.0, 1.0), "continuous_command": bounded, "projected_continuous_action": projected, "executed_action_id": mapped.action_id, "executed_action_name": mapped.action_name, "executed_command": mapped.command, "projection_distance": mapped.distance, "valid_action_count": mapped.valid_action_count, "fallback_used": mapped.fallback_used})
         return result

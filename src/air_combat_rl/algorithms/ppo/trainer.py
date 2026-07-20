@@ -34,7 +34,11 @@ class PPOTrainingStats:
     executed_action_frequency: dict[int, int]
     continuous_action_mean: list[float]
     continuous_action_std: list[float]
-    bounded_action_frequency: list[float]
+    saturation_rate: list[float]
+    exact_projection_rate: float
+    action_mask_valid_count_mean: float
+    explained_variance: float
+    gradient_norm: float
 
 @dataclass(slots=True)
 class PPOActionLogger:
@@ -55,7 +59,8 @@ class PPOActionLogger:
         return {
             "continuous_action_mean": raw.mean(axis=0).tolist() if len(raw) else [0.0, 0.0, 0.0],
             "continuous_action_std": raw.std(axis=0).tolist() if len(raw) else [0.0, 0.0, 0.0],
-            "bounded_action_frequency": (np.mean(np.abs(sq) > 0.99, axis=0).tolist() if len(sq) else [0.0, 0.0, 0.0]),
+            "saturation_rate": (np.mean(np.abs(sq) > 0.99, axis=0).tolist() if len(sq) else [0.0, 0.0, 0.0]),
+            "exact_projection_rate": float(np.mean(np.asarray(self.projection_distances) <= 1e-12)) if self.projection_distances else 0.0,
             "projection_distance_mean": float(np.mean(self.projection_distances)) if self.projection_distances else 0.0,
             "projection_distance_max": float(np.max(self.projection_distances)) if self.projection_distances else 0.0,
             "executed_action_frequency": freq,
@@ -73,7 +78,7 @@ class PPOProjectedTrainer:
             sample = self.actor_critic.act(obs)
             result = self.env.step(sample.squashed_action)
             info = result.info; logger.add(sample.raw_action, sample.squashed_action, info)
-            self.buffer.add(obs, sample.raw_action, result.reward, sample.value, sample.log_prob, result.terminated, result.truncated, episode_start, projected_action=info.get("projected_continuous_action"), executed_action_id=info.get("executed_action_id", -1), projection_distance=info.get("projection_distance", 0.0))
+            self.buffer.add(obs, sample.raw_action, result.reward, sample.value, sample.log_prob, result.terminated, result.truncated, episode_start, projected_action=info.get("projected_continuous_action"), executed_action_id=info.get("executed_action_id", -1), projection_distance=info.get("projection_distance", 0.0), action_mask=info.get("action_mask"), next_observation=result.observation, bounded_action=sample.squashed_action, continuous_command=info.get("continuous_command"), projected_command=info.get("executed_command"))
             obs = result.observation; episode_start = result.terminated or result.truncated; self.global_step += 1
             if episode_start: obs, _ = self.env.reset()
         self._last_logger = logger
@@ -100,4 +105,6 @@ class PPOProjectedTrainer:
         for param, grad in zip(params, grads): param -= self.config.learning_rate * scale * grad
         post = self._objective(); summary = self._last_logger.summarize() if hasattr(self, "_last_logger") else PPOActionLogger().summarize()
         if self.config.target_kl is not None and post.approx_kl > self.config.target_kl: pass
-        return PPOTrainingStats(self.global_step, post.policy_loss, post.value_loss, post.entropy_loss, post.approx_kl, post.clip_fraction, summary["projection_distance_mean"], summary["projection_distance_max"], summary["fallback_count"], summary["action_switch_rate"], summary["executed_action_frequency"], summary["continuous_action_mean"], summary["continuous_action_std"], summary["bounded_action_frequency"])
+        ev = 0.0 if self.buffer.returns is None or np.var(self.buffer.returns) < 1e-12 else float(1.0 - np.var(self.buffer.returns - np.asarray(self.buffer.values))/np.var(self.buffer.returns))
+        mask_counts=[int(np.sum(m)) for m in self.buffer.action_masks if m is not None]
+        return PPOTrainingStats(self.global_step, post.policy_loss, post.value_loss, -post.entropy_loss, post.approx_kl, post.clip_fraction, summary["projection_distance_mean"], summary["projection_distance_max"], summary["fallback_count"], summary["action_switch_rate"], summary["executed_action_frequency"], summary["continuous_action_mean"], summary["continuous_action_std"], summary["saturation_rate"], summary["exact_projection_rate"], float(np.mean(mask_counts)) if mask_counts else 0.0, ev, norm)

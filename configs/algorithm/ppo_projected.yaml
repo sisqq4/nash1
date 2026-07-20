@@ -8,8 +8,11 @@ ppo:
   gae_lambda: 0.95
   learning_rate: 0.003
   clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.0
   max_grad_norm: 0.5
   target_kl: 0.03
 projection:
-  weights: {v: 1.0, gamma: 1.0, psi: 1.0}
-  scales: {v: 30.0, gamma: 0.5, psi: 0.5}
+  metric: weighted_normalized_command_distance
+  weights: {nx: 1.0, nf: 1.0, gamma_s: 1.0}
+  ranges: {nx: 18.0, nf: 9.0, gamma_s: 3.141592653589793}
