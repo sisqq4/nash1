@@ -26,3 +26,20 @@ The current primary and default algorithm is **`ppo_projected`**.
 - **`rainbow_dqn`**: discrete DQN comparison baseline. It uses the original 29-action `BlueEscapeEnv`, action masks, discrete replay semantics, and Rainbow-compatible checkpoints.
 
 All algorithms are intended to share scenario configs, observation schema, reward functions, action catalog, termination semantics, and evaluation metrics so that comparisons measure algorithm differences rather than task differences.
+
+## Single-scenario rollout CLI
+
+Run one reproducible scenario without starting training or batch evaluation:
+
+```bash
+PYTHONPATH=src python scripts/run_scenario.py \
+  --scenario configs/scenario/fixed_1v1.yaml \
+  --actions configs/actions/blue_29.yaml \
+  --platform zdj \
+  --policy constant \
+  --action-id 0 \
+  --seed 0 \
+  --output-dir runs/fixed_1v1_constant
+```
+
+The command writes `manifest.json`, streaming `steps.jsonl`, and `episode_summary.json`. Use `--policy random_valid` to sample only currently legal masked actions with the supplied seed. A non-empty output directory is rejected unless `--overwrite` is passed.

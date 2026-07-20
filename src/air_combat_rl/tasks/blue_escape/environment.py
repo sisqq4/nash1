@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
 import numpy as np
 from air_combat_rl.domain.outcomes import Outcome
 from air_combat_rl.simulation.world import SimulationWorld
@@ -24,14 +25,14 @@ class DiscreteSpace:
 
 class BlueEscapeEnv:
     def __init__(self, world: SimulationWorld, actions: ActionCatalog, platform: str, max_time_s: float = 60.0, max_policy_steps: int | None = None, m_max: int = 4) -> None:
-        self.world = world; self.actions = actions; self.platform = platform; self.action_space = DiscreteSpace(29)
+        self.world = world; self._initial_world = copy.deepcopy(world); self.actions = actions; self.platform = platform; self.action_space = DiscreteSpace(29)
         self.max_time_s = max_time_s; self.max_policy_steps = max_policy_steps
         self.last_outcome = Outcome.RUNNING; self.held_action = HeldAction(); self.policy_steps = 0
         self.observations = ObservationBuilder(ObservationConfig(m_max=m_max)); self.reward_model = EscapeReward(RewardConfig())
         self.reward_model.reset(self.world.snapshot())
 
     def reset(self, seed: int | None = None) -> tuple[np.ndarray, dict[str, object]]:
-        self.policy_steps = 0; self.last_outcome = Outcome.RUNNING; self.reward_model.reset(self.world.snapshot())
+        self.world = copy.deepcopy(self._initial_world); self.held_action = HeldAction(); self.policy_steps = 0; self.last_outcome = Outcome.RUNNING; self.reward_model.reset(self.world.snapshot())
         obs, mask = self.observations.build(self.world.blue, self.world.snapshot().missiles, 0)
         return obs, {"missile_mask": mask, "action_mask": np.asarray(self.actions.action_mask(self.platform), dtype=bool)}
 
