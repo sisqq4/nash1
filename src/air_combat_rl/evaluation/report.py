@@ -1,1 +1,12 @@
-"""Evaluation application-layer placeholder."""
+"""Markdown report rendering for evaluation metrics."""
+from __future__ import annotations
+
+def render_report(manifest:dict, metrics:dict, limitations:list[str]|None=None)->str:
+    o=metrics["overall"]; proj=o.get("projected_ppo",{})
+    lines=["# Blue Escape Evaluation Report","","## 1. 运行信息",f"- Output: `{manifest.get('output_dir')}`",f"- Deterministic: `{manifest.get('deterministic')}`",f"- Episodes per seed/scenario: `{manifest.get('episodes')}`","","## 2. 算法和checkpoint",f"- Algorithm: `{manifest.get('algorithm')}`",f"- Checkpoint: `{manifest.get('checkpoint')}`","","## 3. 场景、平台和seed",f"- Scenarios: `{manifest.get('scenarios')}`",f"- Platform: `{manifest.get('platform')}`",f"- Seeds: `{manifest.get('seeds')}`",f"- Fair comparison: `{manifest.get('fair_comparison')}`","","## 4. outcome分布",f"- Counts: `{o['outcome_counts']}`","","## 5. 生存与逃逸指标",f"- survival_rate: `{o['survival_rate']:.6f}`",f"- escape_completion_rate: `{o['escape_completion_rate']:.6f}`",f"- hit/crash/success/exhausted/timeout: `{o['hit_rate']:.6f}` / `{o['crash_rate']:.6f}` / `{o['success_rate']:.6f}` / `{o['exhausted_rate']:.6f}` / `{o['timeout_rate']:.6f}`","","## 6. reward、时长、距离和高度",f"- reward: `{o['reward']}`",f"- duration_s: `{o['duration_s']}`",f"- policy_steps: `{o['policy_steps']}`",f"- min_sampled_distance_m: `{o['min_sampled_distance_m']}`",f"- min_altitude_y_m: `{o['min_altitude_y_m']}`",f"- lowest_altitude_y_m: `{o['lowest_altitude_y_m']}`","","## 7. 分场景结果"]
+    for g in metrics.get('groups',[]):
+        if g['keys'].get('scenario') is not None:
+            lines.append(f"- `{g['keys']}`: survival={g['metrics']['survival_rate']:.6f}, escape={g['metrics']['escape_completion_rate']:.6f}, outcomes=`{g['metrics']['outcome_counts']}`")
+    lines += ["","## 8. Projected PPO投影诊断",f"- projection_distance: `{proj.get('projection_distance')}`",f"- exact_projection_rate: `{proj.get('exact_projection_rate')}`",f"- projected_action_distribution: `{proj.get('projected_action_distribution')}`",f"- continuous_action_mean/std: `{proj.get('continuous_action_mean')}` / `{proj.get('continuous_action_std')}`",f"- saturation_rate: `{proj.get('saturation_rate')}`",f"- valid_action_count: `{proj.get('valid_action_count')}`",f"- continuous_to_discrete_mapping_frequency: `{proj.get('continuous_to_discrete_mapping_frequency')}`","","## 9. 已知限制"]
+    for item in (limitations or ["本阶段不实现图表或ACMI。"]): lines.append(f"- {item}")
+    return "\n".join(lines)+"\n"
