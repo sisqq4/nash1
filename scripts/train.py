@@ -14,11 +14,11 @@ def _load_algorithm_config(path: Path) -> dict:
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument('--scenario',required=True); ap.add_argument('--actions',required=True); ap.add_argument('--algorithm',required=True); ap.add_argument('--platform',choices=['zdj','yjj'],default='zdj'); ap.add_argument('--seed',type=int,default=0); ap.add_argument('--output-dir',required=True); ap.add_argument('--total-steps',type=int,default=64); ap.add_argument('--checkpoint-interval',type=int,default=64); ap.add_argument('--max-policy-steps',type=int,default=None)
+    ap.add_argument('--scenario',required=True); ap.add_argument('--actions',required=True); ap.add_argument('--algorithm',required=True); ap.add_argument('--platform',choices=['zdj','yjj'],default='zdj'); ap.add_argument('--seed',type=int,default=0); ap.add_argument('--output-dir',required=True); ap.add_argument('--total-steps',type=int,default=64); ap.add_argument('--checkpoint-interval',type=int,default=64); ap.add_argument('--max-policy-steps',type=int,default=None); ap.add_argument('--resume',help='resume from a type-compatible unified checkpoint')
     args=ap.parse_args()
     cfg=_load_algorithm_config(Path(args.algorithm)); cfg['seed']=args.seed
     env,rt_cfg=build_blue_escape_env(args.scenario,args.actions,args.platform,args.seed,args.max_policy_steps)
     runtime=build_algorithm_runtime(cfg,env)
-    result=run_training(runtime,output_dir=args.output_dir,algorithm_config=cfg,seed=args.seed,total_steps=args.total_steps,checkpoint_interval=args.checkpoint_interval)
+    result=run_training(runtime,output_dir=args.output_dir,algorithm_config=cfg,seed=args.seed,total_steps=args.total_steps,checkpoint_interval=args.checkpoint_interval,resume=args.resume)
     print(json.dumps(result,sort_keys=True))
 if __name__=='__main__': main()
