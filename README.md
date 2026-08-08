@@ -75,3 +75,45 @@ PYTHONPATH=src python scripts/train.py --scenario configs/scenario/fixed_1v1.yam
 ```
 
 Each run writes `manifest.json`, `train_metrics.jsonl`, `episodes.jsonl`, and atomic checkpoints under `checkpoints/latest.pt` plus interval `step_<N>.pt` files. Checkpoints include the algorithm name and are type-checked before algorithm-specific loading/resume code should accept them; do not load `ppo_projected`, `ppo_discrete`, and `rainbow_dqn` checkpoints across algorithm types.
+
+## Result visualization
+
+Visualization is an offline presentation layer: it reads recorded JSONL, CSV,
+and JSON artifacts and never starts training or simulation. Matplotlib uses the
+non-interactive `Agg` backend, so these commands work on headless workers.
+
+Plot a single scenario run (XZY means the horizontal plane is **x-z** and
+altitude is **y**):
+
+```bash
+PYTHONPATH=src python scripts/plot_run.py \
+  --run-dir runs/fixed_1v1_constant
+```
+
+This writes horizontal and 3D trajectories, altitude, missile distance, reward,
+and reward-component PNG files under `<run-dir>/plots/`. Missing optional reward
+components produce an explanatory chart instead of failing the run artifact.
+
+Plot an existing evaluation, including Projected PPO diagnostics when projection
+fields are present:
+
+```bash
+PYTHONPATH=src python scripts/plot_evaluation.py \
+  --evaluation-dir runs/eval_projected_ppo
+```
+
+Discrete PPO and Rainbow DQN evaluation plots omit Projected-PPO-only charts.
+Compare algorithms only when manifests describe identical scenarios, platform,
+episode/seed schedule, deterministic mode, and action catalog:
+
+```bash
+PYTHONPATH=src python scripts/compare_algorithms.py \
+  --evaluations runs/eval_projected_ppo \
+                runs/eval_discrete_ppo \
+                runs/eval_rainbow_dqn \
+  --output-dir runs/algorithm_comparison
+```
+
+The comparison includes outcome/survival rates, mean reward, duration, minimum
+sampled distance, lowest y-altitude, and per-scenario survival. A condition
+mismatch is rejected explicitly rather than producing an unfair chart.

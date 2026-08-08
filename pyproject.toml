@@ -7,7 +7,7 @@ name = "air-combat-rl"
 version = "0.1.0"
 description = "Layered air-combat escape simulation, task, algorithm, and application scaffold."
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.24", "PyYAML>=6.0"]
+dependencies = ["numpy>=1.24", "PyYAML>=6.0", "matplotlib>=3.7"]
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
