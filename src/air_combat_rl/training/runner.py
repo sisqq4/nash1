@@ -30,10 +30,37 @@ def assert_checkpoint_algorithm(path, expected):
     if data.get('algorithm_name')!=expected: raise CheckpointTypeError(f"checkpoint algorithm {data.get('algorithm_name')!r} != {expected!r}")
     return data
 
-def run_training(runtime, *, output_dir, algorithm_config, seed, total_steps=64, checkpoint_interval=64):
+def restore_checkpoint(path, runtime):
+    """Restore a unified JSON checkpoint after strict algorithm/dimension checks."""
+    data=assert_checkpoint_algorithm(path,runtime.name)
+    trainer=runtime.trainer; model=getattr(trainer,'actor_critic',getattr(trainer,'q_network',None))
+    if data.get('observation_dim') not in (None,getattr(model,'obs_dim',None)): raise CheckpointTypeError('checkpoint observation dimension mismatch')
+    if data.get('action_dim') not in (None,getattr(model,'action_dim',None)): raise CheckpointTypeError('checkpoint action dimension mismatch')
+    catalog=getattr(getattr(runtime.env,'actions',getattr(runtime.env,'base_env',None).actions if hasattr(runtime.env,'base_env') else None),'version',None)
+    if data.get('action_catalog_version') not in (None,catalog): raise CheckpointTypeError('checkpoint action catalog mismatch')
+    if runtime.name == 'ppo_projected':
+        if data.get('continuous_action_dim') not in (None, 3): raise CheckpointTypeError('checkpoint continuous action dimension mismatch')
+        expected_bounds={'low':[-1,-1,-1],'high':[1,1,1]}
+        if data.get('action_bounds') not in (None, expected_bounds): raise CheckpointTypeError('checkpoint projected action bounds mismatch')
+    state=data.get('model_state') or {}
+    if model is not None:
+        for key,value in state.items():
+            if key == 'rng_state' and hasattr(model, 'rng'):
+                model.rng.bit_generator.state=value
+                continue
+            current=getattr(model,key,None)
+            if isinstance(current,list):
+                for target,source in zip(current,value): target[...] = np.asarray(source,float)
+            elif isinstance(current,np.ndarray): current[...] = np.asarray(value,float)
+            elif hasattr(model,key): setattr(model,key,np.asarray(value,float) if isinstance(value,list) else value)
+    trainer.global_step=int(data.get('global_step',0))
+    return data
+
+def run_training(runtime, *, output_dir, algorithm_config, seed, total_steps=64, checkpoint_interval=64, resume=None):
     out=Path(output_dir); ck=out/'checkpoints'; ck.mkdir(parents=True,exist_ok=True)
+    restored=restore_checkpoint(resume,runtime) if resume else None
     (out/'manifest.json').write_text(json.dumps({"algorithm_name":runtime.name,"seed":seed,"algorithm_config":algorithm_config},indent=2),encoding='utf-8')
-    episode=0; obs_info=None
+    episode=int(restored.get('episode',0)) if restored else 0; obs_info=None
     with (out/'train_metrics.jsonl').open('a',encoding='utf-8') as mf, (out/'episodes.jsonl').open('a',encoding='utf-8') as ef:
         while getattr(runtime.trainer,'global_step',0) < total_steps:
             if runtime.name.startswith('ppo'):

@@ -2,6 +2,14 @@
 
 This repository is structured as a layered blue-escape research codebase.
 
+## Quick start
+
+Install Python 3.10+ and all runtime/test dependencies:
+
+```bash
+python -m pip install -e '.[test]'
+```
+
 ## Architecture
 
 1. **Domain simulation kernel** (`air_combat_rl.core`, `air_combat_rl.domain`, `air_combat_rl.simulation`) owns coordinates, units, physical state, 3-DoF dynamics, guidance, propulsion, collision checks, scenarios, events, and snapshots.
@@ -76,6 +84,43 @@ PYTHONPATH=src python scripts/train.py --scenario configs/scenario/fixed_1v1.yam
 
 Each run writes `manifest.json`, `train_metrics.jsonl`, `episodes.jsonl`, and atomic checkpoints under `checkpoints/latest.pt` plus interval `step_<N>.pt` files. Checkpoints include the algorithm name and are type-checked before algorithm-specific loading/resume code should accept them; do not load `ppo_projected`, `ppo_discrete`, and `rainbow_dqn` checkpoints across algorithm types.
 
+Resume a compatible checkpoint into a new or existing output directory. The
+`--total-steps` value is the desired final global step, not an additional count:
+
+```bash
+PYTHONPATH=src python scripts/train.py \
+  --scenario configs/scenario/fixed_1v1.yaml \
+  --actions configs/actions/blue_29.yaml \
+  --algorithm configs/algorithm/ppo_projected.yaml \
+  --platform zdj --seed 0 --total-steps 128 \
+  --resume runs/projected_ppo_fixed_1v1/checkpoints/latest.pt \
+  --output-dir runs/projected_ppo_resumed
+```
+
+## Batch evaluation and outcome metrics
+
+Evaluate any learned algorithm by pairing its config with its own checkpoint:
+
+```bash
+PYTHONPATH=src python scripts/evaluate.py \
+  --scenarios configs/scenario/fixed_1v1.yaml \
+  --actions configs/actions/blue_29.yaml \
+  --algorithm configs/algorithm/ppo_projected.yaml \
+  --checkpoint runs/projected_ppo_fixed_1v1/checkpoints/latest.pt \
+  --platform zdj --episodes 10 --seeds 0 1 --deterministic \
+  --output-dir runs/eval_projected_ppo
+```
+
+Repeat with the matching Discrete PPO and Rainbow DQN config/checkpoint. Each
+evaluation produces `metrics.json`, `episodes.csv`, `report.md`, a manifest,
+`evaluation_steps.jsonl`, and per-episode files under `trajectories/`.
+`success`/escape completion means the configured escape condition was met;
+`hit` means a missile intercepted blue; `crash` means blue collided with the
+ground; `exhausted` means threats ceased to be effective; and `timeout` means
+the time/step limit was reached. Timeout remains a distinct outcome and is not
+counted silently as success. Survival rate covers non-hit/non-crash episodes,
+while escape-completion rate reports only the explicit success outcome.
+
 ## Result visualization
 
 Visualization is an offline presentation layer: it reads recorded JSONL, CSV,
@@ -117,3 +162,37 @@ PYTHONPATH=src python scripts/compare_algorithms.py \
 The comparison includes outcome/survival rates, mean reward, duration, minimum
 sampled distance, lowest y-altitude, and per-scenario survival. A condition
 mismatch is rejected explicitly rather than producing an unfair chart.
+
+## Tacview ACMI export
+
+ACMI is an optional offline product; simulation, training, and evaluation do
+not require it. Export a Phase-1 `steps.jsonl` trajectory with an explicit
+geodetic origin (the tool never assumes 0°N, 0°E):
+
+```bash
+PYTHONPATH=src python scripts/export_acmi.py \
+  --trajectory runs/fixed_1v1_constant/steps.jsonl \
+  --origin-lat-deg 34.0 --origin-lon-deg 108.0 --origin-alt-m 0 \
+  --reference-time 2026-01-01T00:00:00Z \
+  --output runs/fixed_1v1_constant/trajectory.acmi
+```
+
+The exporter maps simulation `x` to north/latitude, `z` to east/longitude, and
+`y` to altitude above the supplied origin. It writes stable blue/missile IDs,
+heading from `psi`, pitch from `gamma`, object removal, and supported hit and
+ground-collision events. Because the model is three-DoF, roll is explicitly
+written as zero rather than presenting a fabricated roll attitude.
+
+## Output directory guide
+
+- Scenario runs: `manifest.json`, `steps.jsonl`, `episode_summary.json`, and
+  optional `trajectory.acmi`; offline charts are placed in `plots/`.
+- Training runs: manifest and append-only training/episode JSONL plus
+  algorithm-typed checkpoints under `checkpoints/`.
+- Evaluation runs: aggregate JSON/CSV/Markdown, evaluation-step JSONL, episode
+  trajectories, and optional charts under `plots/`.
+- Comparison runs: fair-condition validation metadata and cross-algorithm PNGs.
+
+Keep algorithm config and checkpoints paired: Projected PPO is the default
+continuous-intent/projected primary method, Discrete PPO is the categorical
+29-action PPO control, and Rainbow DQN is the discrete value-based control.
