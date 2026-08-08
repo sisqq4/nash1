@@ -230,6 +230,8 @@ def run_evaluation(
                         "projection_distances": [],
                         "projected_action_distribution": Counter(),
                         "continuous_actions": [],
+                        "continuous_commands": [],
+                        "projected_commands": [],
                         "valid_action_counts": [],
                         "saturation_flags": [],
                         "continuous_to_discrete_mapping_frequency": Counter(),
@@ -249,6 +251,14 @@ def run_evaluation(
                                 projected_diag["projection_distances"].append(projection_distance)
                                 projected_diag["projected_action_distribution"][action_id] += 1
                                 projected_diag["continuous_actions"].append(bounded.tolist())
+                                continuous_command = info_after_step.get("continuous_command")
+                                projected_command = info_after_step.get("executed_command")
+                                projected_diag["continuous_commands"].append(
+                                    [continuous_command.nx, continuous_command.nf, continuous_command.gamma_s]
+                                )
+                                projected_diag["projected_commands"].append(
+                                    [projected_command.nx, projected_command.nf, projected_command.gamma_s]
+                                )
                                 projected_diag["valid_action_counts"].append(int(info_after_step.get("valid_action_count", 0)))
                                 projected_diag["saturation_flags"].append(bool(np.any(np.abs(bounded) >= 0.99)))
                                 mapping_key = f"{np.round(bounded, 3).tolist()}->{action_id}"
@@ -285,6 +295,13 @@ def run_evaluation(
                                 "threat_count": sum(1 for missile in env.world.missiles if missile.alive and missile.locked),
                                 "trajectory_ref": str(trajectory_path.relative_to(output_path)),
                             }
+                            if alg == "ppo_projected":
+                                step_record.update({
+                                    "bounded_continuous_action": bounded.tolist(),
+                                    "continuous_command_nx_nf_gamma_s": projected_diag["continuous_commands"][-1],
+                                    "projected_command_nx_nf_gamma_s": projected_diag["projected_commands"][-1],
+                                    "projection_distance": projection_distance,
+                                })
                             line = json.dumps(normalize_json(step_record), sort_keys=True)
                             step_file.write(line + "\n")
                             trajectory_file.write(line + "\n")
