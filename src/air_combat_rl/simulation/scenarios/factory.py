@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math, random
+from pathlib import Path
+import yaml
 from air_combat_rl.core.coordinates import VecXZY
 from air_combat_rl.core.timebase import SimulationClock
 from air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState, MissileState
@@ -27,21 +29,28 @@ class ScenarioConfig:
 
     @classmethod
     def from_yaml(cls, path: str) -> "ScenarioConfig":
-        data: dict[str, object] = {}
-        with open(path, "r", encoding="utf-8") as fh:
-            for raw in fh:
-                line = raw.strip()
-                if not line or line.startswith("#") or ":" not in line:
-                    continue
-                key, value = line.split(":", 1)
-                value = value.strip()
-                if value.startswith("[") and value.endswith("]"):
-                    data[key] = tuple(float(x.strip()) for x in value[1:-1].split(",") if x.strip())
-                elif value.replace(".", "", 1).isdigit():
-                    data[key] = float(value) if "." in value else int(value)
-                else:
-                    data[key] = value
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            raise ValueError("scenario config must be a YAML mapping")
+        allowed = set(cls.__dataclass_fields__)
+        unknown = set(data) - allowed - {"name"}
+        if unknown:
+            raise ValueError(f"unknown scenario fields: {sorted(unknown)}")
+        if "blue_altitude_m" in data:
+            values = data["blue_altitude_m"]
+            if not isinstance(values, (list, tuple)) or len(values) != 2:
+                raise ValueError("blue_altitude_m must contain [minimum, maximum]")
+            data["blue_altitude_m"] = tuple(float(value) for value in values)
+        if isinstance(data.get("world"), dict):
+            data["world"] = WorldConfig(**data["world"])
+        result = cls(**{key: value for key, value in data.items() if key in allowed})
+        if result.physics_dt <= 0 or result.policy_dt <= 0:
+            raise ValueError("physics_dt and policy_dt must be positive")
+        if result.physics_dt > result.policy_dt:
+            raise ValueError("physics_dt must not exceed policy_dt")
+        if result.missile_count <= 0:
+            raise ValueError("missile_count must be positive")
+        return result
 
 
 def build_scenario(config: ScenarioConfig) -> SimulationWorld:

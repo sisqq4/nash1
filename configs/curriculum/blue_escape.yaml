@@ -1,2 +1,44 @@
 name: blue_escape
-stages: []
+version: 1
+metric_window_episodes: 100
+minimum_stage_episodes: 100
+allow_regression: false
+stages:
+  - name: basic_fixed_1v1
+    minimum_episodes: 100
+    maximum_steps: 300000
+    scenarios:
+      - {path: configs/scenario/fixed_1v1.yaml, weight: 1.0}
+    advancement: {metric: success_rate, threshold: 0.80, consecutive_windows: 3}
+  - name: randomized_1v1
+    minimum_episodes: 200
+    maximum_steps: 800000
+    scenarios:
+      - {path: configs/scenario/randomized_1v1.yaml, weight: 0.7}
+      - {path: configs/scenario/fixed_1v1.yaml, weight: 0.3}
+    advancement: {metric: success_rate, threshold: 0.75, consecutive_windows: 3}
+  - name: high_threat
+    minimum_episodes: 300
+    maximum_steps: 1500000
+    scenarios:
+      - {path: configs/scenario/high_threat_1v1.yaml, weight: 0.5}
+      - {path: configs/scenario/randomized_1v1.yaml, weight: 0.3}
+      - {path: configs/scenario/terminal_intercept_1v1.yaml, weight: 0.2}
+    advancement: {metric: survival_rate, threshold: 0.70, consecutive_windows: 3}
+  - name: multi_threat
+    minimum_episodes: 400
+    maximum_steps: 3000000
+    scenarios:
+      - {path: configs/scenario/1v2.yaml, weight: 0.45}
+      - {path: configs/scenario/1vN.yaml, weight: 0.25}
+      - {path: configs/scenario/powered_launch_1vn.yaml, weight: 0.15}
+      - {path: configs/scenario/high_threat_1v1.yaml, weight: 0.15}
+    advancement: {metric: survival_rate, threshold: 0.65, consecutive_windows: 5}
+  - name: mixed_mastery
+    scenarios:
+      - {path: configs/scenario/fixed_1v1.yaml, weight: 0.05}
+      - {path: configs/scenario/randomized_1v1.yaml, weight: 0.20}
+      - {path: configs/scenario/high_threat_1v1.yaml, weight: 0.20}
+      - {path: configs/scenario/terminal_intercept_1vn.yaml, weight: 0.20}
+      - {path: configs/scenario/powered_launch_1vn.yaml, weight: 0.15}
+      - {path: configs/scenario/1vN.yaml, weight: 0.20}

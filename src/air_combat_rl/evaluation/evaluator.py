@@ -185,7 +185,18 @@ def run_evaluation(
     output_dir,
     constant_action_id: int = 0,
     max_policy_steps=None,
+    device="auto",
+    num_envs=8,
+    env_backend="subprocess",
+    start_method="spawn",
 ):
+    cfg = load_yaml(algorithm_config_path) if algorithm_config_path else {"algorithm": {"name": "constant"}}
+    if cfg.get("algorithm", {}).get("backend") == "torch":
+        from air_combat_rl.evaluation.parallel_evaluator import run_parallel_torch_evaluation
+        try:
+            return run_parallel_torch_evaluation(scenarios=scenarios, actions=actions, algorithm_config_path=algorithm_config_path, checkpoint=checkpoint, platform=platform, episodes=episodes, seeds=seeds, deterministic=deterministic, output_dir=output_dir, max_policy_steps=max_policy_steps, device=device, num_envs=num_envs, env_backend=env_backend, start_method=start_method)
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise EvaluationError(str(exc)) from exc
     if episodes <= 0:
         raise EvaluationError("episodes must be > 0")
     if not scenarios:
@@ -196,7 +207,6 @@ def run_evaluation(
     output_path.mkdir(parents=True, exist_ok=True)
     (output_path / "trajectories").mkdir(exist_ok=True)
 
-    cfg = load_yaml(algorithm_config_path) if algorithm_config_path else {"algorithm": {"name": "constant"}}
     alg = cfg.get("algorithm", {}).get("name", cfg.get("name", "ppo_projected"))
     all_rows = []
 
