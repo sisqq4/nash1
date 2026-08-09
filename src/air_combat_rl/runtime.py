@@ -36,14 +36,18 @@ def build_blue_escape_env(
         raise ValueError(f"unsupported platform {platform!r}; expected 'zdj' or 'yjj'")
     scenario = ScenarioConfig.from_yaml(str(scenario_path))
     scenario = replace(scenario, seed=seed)
-    world = build_scenario(scenario)
-    world.blue = replace(world.blue, platform=platform)
+    def world_factory(world_seed: int):
+        configured = replace(scenario, seed=int(world_seed))
+        built = build_scenario(configured)
+        built.blue = replace(built.blue, platform=platform)
+        return built
+    world = world_factory(seed)
     actions = ActionCatalog.from_yaml(str(actions_path))
     if not any(actions.action_mask(platform)):
         raise ValueError(f"platform {platform!r} has no legal actions")
     if world.clock.physics_dt != scenario.physics_dt or world.clock.policy_dt != scenario.policy_dt:
         raise ValueError("world clock does not match scenario physics_dt/policy_dt")
-    env = BlueEscapeEnv(world, actions, platform, max_time_s=scenario.max_episode_time_s, max_policy_steps=max_policy_steps)
+    env = BlueEscapeEnv(world, actions, platform, max_time_s=scenario.max_episode_time_s, max_policy_steps=max_policy_steps, world_factory=world_factory, initial_seed=seed)
     return env, RuntimeConfig(str(scenario_path), str(actions_path), platform, seed, scenario, max_policy_steps)
 
 from air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic

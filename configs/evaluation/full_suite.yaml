@@ -1,0 +1,12 @@
+name: full_blue_escape_suite
+scenarios:
+  - configs/scenario/fixed_1v1.yaml
+  - configs/scenario/randomized_1v1.yaml
+  - configs/scenario/high_threat_1v1.yaml
+  - configs/scenario/terminal_intercept_1v1.yaml
+  - configs/scenario/1v2.yaml
+  - configs/scenario/1vN.yaml
+  - configs/scenario/powered_launch_1vn.yaml
+seeds: [0, 1, 2, 3, 4]
+episodes_per_seed: 10
+deterministic: true

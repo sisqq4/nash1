@@ -196,3 +196,66 @@ written as zero rather than presenting a fabricated roll attitude.
 Keep algorithm config and checkpoints paired: Projected PPO is the default
 continuous-intent/projected primary method, Discrete PPO is the categorical
 29-action PPO control, and Rainbow DQN is the discrete value-based control.
+
+## GPU vector training and curriculum learning
+
+The PyTorch Projected-PPO backend keeps physics, guidance, rewards, and action
+projection in parallel CPU environment workers while batching policy inference
+and PPO optimization on one GPU. Install a PyTorch build matching the worker's
+CUDA runtime, then install the optional project dependencies:
+
+```bash
+python -m pip install -e '.[test,torch]'
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+Run the staged curriculum with eight spawned simulation workers. `global_step`
+counts transitions across all workers, so one 256-step rollout from eight
+workers contributes 2,048 steps. `--total-steps` must be divisible by the
+number of environments; the last rollout is shortened so training stops at the
+requested transition count exactly:
+
+```bash
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+PYTHONPATH=src python scripts/train.py \
+  --curriculum configs/curriculum/blue_escape.yaml \
+  --actions configs/actions/blue_29.yaml \
+  --algorithm configs/algorithm/ppo_projected_torch.yaml \
+  --platform zdj --seed 0 --device cuda:0 \
+  --num-envs 8 --env-backend subprocess \
+  --worker-start-method spawn --total-steps 5000000 \
+  --checkpoint-interval 100000 \
+  --output-dir runs/projected_ppo_curriculum_gpu
+```
+
+The scheduler samples the weighted scenarios in the active stage, advances on
+rolling success/survival criteria (or a configured maximum-step limit), retains
+easier scenarios in later stages, and stores its stage, counters, recent
+outcomes, RNG, and next episode id in every checkpoint. Resume with the same
+algorithm and curriculum files plus `--resume`; the final `--total-steps` is the
+desired aggregate transition count.
+
+For deterministic batched evaluation, load the model once on the GPU and run a
+fixed suite across parallel CPU workers:
+
+```bash
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+PYTHONPATH=src python scripts/evaluate.py \
+  --evaluation-suite configs/evaluation/full_suite.yaml \
+  --actions configs/actions/blue_29.yaml \
+  --algorithm configs/algorithm/ppo_projected_torch.yaml \
+  --checkpoint runs/projected_ppo_curriculum_gpu/checkpoints/latest.pt \
+  --platform zdj --device cuda:0 --num-envs 8 \
+  --env-backend subprocess --deterministic \
+  --output-dir runs/eval_projected_ppo_curriculum_gpu
+```
+
+Use `--device cpu --env-backend serial` for deterministic debugging without a
+GPU. CUDA is initialized only in the learner/evaluator process; spawned workers
+never own model replicas. Training writes curriculum transitions to
+`curriculum.jsonl`, hardware and parallelism metadata to `manifest.json`, and
+atomic PyTorch checkpoints containing model, optimizer, AMP scaler, RNG, and
+curriculum state. Checkpoint schema v3 also binds the action catalog,
+projection configuration, vector-environment assignments, and curriculum file;
+the earlier experimental v2 Torch checkpoints are rejected rather than resumed
+with silently different training semantics.
