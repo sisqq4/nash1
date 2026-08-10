@@ -1,4 +1,4 @@
-"""Convert a recorded Phase-1 trajectory JSONL file to Tacview ACMI 2.2."""
+"""Convert a recorded Phase-1 trajectory JSONL file to Tacview ACMI 2.1."""
 from __future__ import annotations
 
 import argparse

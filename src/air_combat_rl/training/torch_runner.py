@@ -25,6 +25,7 @@ from air_combat_rl.algorithms.ppo.torch_trainer import TorchPPOConfig, TorchPPOT
 from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
 from air_combat_rl.training.curriculum import CurriculumConfig, CurriculumScheduler
 from air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
+from air_combat_rl.io.progress import ExperimentProgress
 
 torch = require_torch()
 CHECKPOINT_SCHEMA_VERSION = 3
@@ -306,7 +307,9 @@ def run_torch_training(
         next_checkpoint = (
             (trainer.global_step // checkpoint_interval) + 1
         ) * checkpoint_interval
-        with (
+        progress = ExperimentProgress(total_steps, "training", "step")
+        try:
+          with (
             (output / "train_metrics.jsonl").open(
                 "a", encoding="utf-8"
             ) as metrics_file,
@@ -331,6 +334,7 @@ def run_torch_training(
 
                 for record in trainer.completed_episodes:
                     episode_file.write(json.dumps(record, sort_keys=True) + "\n")
+                progress.record_outcomes(record.get("outcome") for record in trainer.completed_episodes)
                 trainer.completed_episodes.clear()
                 episode_file.flush()
 
@@ -344,6 +348,7 @@ def run_torch_training(
                     )
                 trainer.curriculum_events.clear()
                 curriculum_file.flush()
+                progress.update(trainer.global_step, metrics)
 
                 if trainer.global_step >= next_checkpoint:
                     save_torch_checkpoint(
@@ -354,6 +359,8 @@ def run_torch_training(
                     )
                     while next_checkpoint <= trainer.global_step:
                         next_checkpoint += checkpoint_interval
+        finally:
+            progress.close()
 
         save_torch_checkpoint(
             checkpoints / "latest.pt", trainer, algorithm_config, curriculum

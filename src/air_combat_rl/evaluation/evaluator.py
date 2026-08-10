@@ -14,6 +14,7 @@ import yaml
 from air_combat_rl.evaluation.metrics import summarize_episodes
 from air_combat_rl.evaluation.report import render_report
 from air_combat_rl.io.trajectory_writer import normalize_json
+from air_combat_rl.io.progress import ExperimentProgress
 from air_combat_rl.runtime import build_algorithm_runtime, build_blue_escape_env
 
 
@@ -209,6 +210,7 @@ def run_evaluation(
 
     alg = cfg.get("algorithm", {}).get("name", cfg.get("name", "ppo_projected"))
     all_rows = []
+    progress = ExperimentProgress(len(scenarios) * len(seeds) * episodes, "evaluation", "episode")
 
     with (output_path / "evaluation_steps.jsonl").open("w", encoding="utf-8") as step_file:
         ep_index = 0
@@ -334,6 +336,10 @@ def run_evaluation(
                     )
                     all_rows.append(row)
                     ep_index += 1
+                    progress.record_outcomes([row["outcome"]])
+                    progress.update(ep_index)
+
+    progress.close()
 
     metrics = summarize_episodes(all_rows)
     manifest = {

@@ -55,6 +55,8 @@ class SimulationWorld:
     substeps_last_interval: int = 0
     min_missile_distances: list[float] = field(default_factory=list)
     closest_approach_passed: list[bool] = field(default_factory=list)
+    blue_detection_range_m: float = 30000.0
+    launched_missiles: set[int] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         if not self.min_missile_distances or len(self.min_missile_distances) != len(self.missiles):
@@ -64,6 +66,17 @@ class SimulationWorld:
 
     def snapshot(self) -> WorldSnapshot:
         return WorldSnapshot(self.time_s, self.blue, tuple(self.missiles))
+
+    def missile_is_launched(self, missile: MissileState) -> bool:
+        return self.time_s + 1.0e-9 >= missile.launch_time_s
+
+    def blue_detects_threat(self) -> bool:
+        return any(
+            self.missile_is_launched(missile)
+            and missile.alive and missile.locked
+            and _distance(missile.kinematics, self.blue.kinematics) <= self.blue_detection_range_m
+            for missile in self.missiles
+        )
 
     def step_policy_interval(self, command: ManeuverCommand) -> tuple[WorldSnapshot, tuple[SimulationEvent, ...]]:
         events: list[SimulationEvent] = []
@@ -113,6 +126,12 @@ class SimulationWorld:
             if not missile.alive:
                 updated.append(missile)
                 continue
+            if not self.missile_is_launched(missile):
+                updated.append(missile)
+                continue
+            if i not in self.launched_missiles:
+                self.launched_missiles.add(i)
+                events.append(SimulationEvent(self.time_s, "missile_launch", f"missile_{i}", {}))
             age = missile.age_s + self.clock.physics_dt
             drag_g = self.config.missile_drag_coefficient_per_m * missile.kinematics.speed ** 2 / STANDARD_GRAVITY
             mcmd = proportional_navigation_command(missile.kinematics, self.blue.kinematics, self.config.navigation_constant, -drag_g)

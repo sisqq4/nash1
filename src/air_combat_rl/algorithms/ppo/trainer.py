@@ -71,7 +71,7 @@ class PPOActionLogger:
 class PPOProjectedTrainer:
     """Collects continuous PPO rollouts and updates actor-critic parameters independently of DQN."""
     def __init__(self, env, actor_critic: PPOActorCritic, config: PPOTrainerConfig | None = None) -> None:
-        self.env = env; self.actor_critic = actor_critic; self.config = config or PPOTrainerConfig(); self.buffer = RolloutBuffer(); self.global_step = 0
+        self.env = env; self.actor_critic = actor_critic; self.config = config or PPOTrainerConfig(); self.buffer = RolloutBuffer(); self.global_step = 0; self.completed_outcomes = []
     def collect_rollout(self, reset_seed: int | None = None) -> RolloutBuffer:
         self.buffer.clear(); obs, _ = self.env.reset(reset_seed); episode_start = True; logger = PPOActionLogger()
         for _ in range(self.config.rollout_steps):
@@ -80,7 +80,8 @@ class PPOProjectedTrainer:
             info = result.info; logger.add(sample.raw_action, sample.squashed_action, info)
             self.buffer.add(obs, sample.raw_action, result.reward, sample.value, sample.log_prob, result.terminated, result.truncated, episode_start, projected_action=info.get("projected_continuous_action"), executed_action_id=info.get("executed_action_id", -1), projection_distance=info.get("projection_distance", 0.0), action_mask=info.get("action_mask"), next_observation=result.observation, bounded_action=sample.squashed_action, continuous_command=info.get("continuous_command"), projected_command=info.get("executed_command"))
             obs = result.observation; episode_start = result.terminated or result.truncated; self.global_step += 1
-            if episode_start: obs, _ = self.env.reset()
+            if episode_start:
+                self.completed_outcomes.append(info.get("outcome")); obs, _ = self.env.reset()
         self._last_logger = logger
         last_value = self.actor_critic.act(obs, deterministic=True).value
         self.buffer.compute_returns_and_advantages(last_value, self.config.gamma, self.config.gae_lambda)

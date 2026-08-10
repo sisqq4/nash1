@@ -19,6 +19,7 @@ from air_combat_rl.algorithms.ppo.torch_actor_critic import TorchPPOActorCritic
 from air_combat_rl.evaluation.metrics import summarize_episodes
 from air_combat_rl.evaluation.report import render_report
 from air_combat_rl.io.trajectory_writer import normalize_json
+from air_combat_rl.io.progress import ExperimentProgress
 from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
 from air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
 
@@ -131,6 +132,7 @@ def run_parallel_torch_evaluation(
     )
 
     rows = []
+    progress = ExperimentProgress(len(tasks), "evaluation", "episode")
     trajectory_files = {}
     step_file = (output / "evaluation_steps.jsonl").open("w", encoding="utf-8")
     try:
@@ -254,6 +256,8 @@ def run_parallel_torch_evaluation(
                         "projected_ppo": diagnostics[env_index],
                     }
                 )
+                progress.record_outcomes([outcome])
+                progress.update(len(rows))
 
                 if pending:
                     new_spec = pending.popleft()
@@ -333,6 +337,7 @@ def run_parallel_torch_evaluation(
         )
         return {"output_dir": str(output), "episodes": len(rows), "metrics": metrics}
     finally:
+        progress.close()
         for trajectory_file in trajectory_files.values():
             trajectory_file.close()
         step_file.close()
