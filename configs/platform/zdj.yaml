@@ -3,3 +3,7 @@ min_speed: 120.0
 max_speed: 420.0
 min_altitude: 50.0
 max_altitude: 12000.0
+max_g: 9.0
+low_speed: 180.0
+high_speed: 380.0
+low_altitude: 1000.0

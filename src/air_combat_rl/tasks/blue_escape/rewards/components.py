@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
+import yaml
 from air_combat_rl.core.math3d import flight_velocity
 from air_combat_rl.domain.states import MissileState
 from air_combat_rl.simulation.snapshot import WorldSnapshot
@@ -54,6 +56,29 @@ class RewardConfig:
     corridor_width_ref_m: float = 2_000.0
     shaping_scale: float = 0.1
     smooth_weight: float = -0.02
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "RewardConfig":
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            raise ValueError("reward config must be a YAML mapping")
+        unknown_top = set(data) - {"name", "components", "parameters"}
+        if unknown_top:
+            raise ValueError(f"unknown reward config fields: {sorted(unknown_top)}")
+        parameters = data.get("parameters", {})
+        if not isinstance(parameters, dict):
+            raise ValueError("reward parameters must be a YAML mapping")
+        unknown = set(parameters) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(f"unknown reward parameters: {sorted(unknown)}")
+        result = cls(**{key: float(value) for key, value in parameters.items()})
+        if not 0 < result.short_range_m < result.safe_distance_m:
+            raise ValueError("reward distances must satisfy 0 < short_range < safe_distance")
+        if not 0 <= result.min_altitude_m < result.max_altitude_m:
+            raise ValueError("reward altitude range is invalid")
+        if not 0 <= result.speed_min_mps < result.speed_max_mps:
+            raise ValueError("reward speed range is invalid")
+        return result
 
 
 class EscapeReward:

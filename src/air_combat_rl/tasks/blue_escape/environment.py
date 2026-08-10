@@ -24,11 +24,12 @@ class DiscreteSpace:
         self.n = n
 
 class BlueEscapeEnv:
-    def __init__(self, world: SimulationWorld, actions: ActionCatalog, platform: str, max_time_s: float = 60.0, max_policy_steps: int | None = None, m_max: int = 4, world_factory=None, initial_seed: int = 0) -> None:
+    def __init__(self, world: SimulationWorld, actions: ActionCatalog, platform: str, max_time_s: float = 60.0, max_policy_steps: int | None = None, m_max: int = 4, world_factory=None, initial_seed: int = 0, reward_config: RewardConfig | None = None, platform_config=None) -> None:
         self.world = world; self._initial_world = copy.deepcopy(world); self.actions = actions; self.platform = platform; self.action_space = DiscreteSpace(29)
         self.max_time_s = max_time_s; self.max_policy_steps = max_policy_steps
         self.last_outcome = Outcome.RUNNING; self.held_action = HeldAction(); self.policy_steps = 0
-        self.observations = ObservationBuilder(ObservationConfig(m_max=m_max)); self.reward_model = EscapeReward(RewardConfig())
+        self.observations = ObservationBuilder(ObservationConfig(m_max=m_max)); self.reward_model = EscapeReward(reward_config or RewardConfig())
+        self.platform_config = platform_config
         self.reward_model.reset(self.world.snapshot())
         self._world_factory = world_factory; self._seed = int(initial_seed)
 

@@ -18,6 +18,8 @@ def make_env(spec: EnvSpec):
         spec.platform,
         spec.seed,
         spec.max_policy_steps,
+        spec.platform_config_path,
+        spec.reward_config_path,
     )
     if not spec.projected_continuous:
         return env

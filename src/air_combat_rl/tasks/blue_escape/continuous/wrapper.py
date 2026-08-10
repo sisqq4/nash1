@@ -2,7 +2,7 @@
 from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
-from air_combat_rl.tasks.blue_escape.continuous.projector import ContinuousCommandProjector
+from air_combat_rl.tasks.blue_escape.continuous.projector import ContinuousCommandProjector, ContinuousProjectionConfig
 from air_combat_rl.tasks.blue_escape.continuous.mapper import NearestManeuverMapper
 
 @dataclass(frozen=True, slots=True)
@@ -11,6 +11,15 @@ class BoxSpace:
 
 class ProjectedContinuousActionWrapper:
     def __init__(self, base_env, projector: ContinuousCommandProjector | None = None, mapper: NearestManeuverMapper | None = None) -> None:
+        if projector is None and getattr(base_env, "platform_config", None) is not None:
+            p = base_env.platform_config
+            projector = ContinuousCommandProjector(config=ContinuousProjectionConfig(
+                zdj_max_g=p.max_g if p.name == "zdj" else 9.0,
+                yjj_max_g=p.max_g if p.name == "yjj" else 3.0,
+                min_speed_mps=p.min_speed, low_speed_mps=p.low_speed,
+                high_speed_mps=p.high_speed, max_speed_mps=p.max_speed,
+                min_altitude_m=p.min_altitude, low_altitude_m=p.low_altitude,
+            ))
         self.base_env = base_env; self.projector = projector or ContinuousCommandProjector(); self.mapper = mapper or NearestManeuverMapper(base_env.actions)
         self.action_space = BoxSpace(np.full(3, -1.0), np.full(3, 1.0), (3,)); self.observation_space = getattr(base_env, "observation_space", None)
     def reset(self, seed: int | None = None): return self.base_env.reset(seed)

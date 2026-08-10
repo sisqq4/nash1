@@ -1,2 +1,16 @@
 name: escape_1v1
 components: [terminal, threat_relief, distance_change, altitude, speed, action_smoothness, survival]
+parameters:
+  safe_distance_m: 30000.0
+  short_range_m: 8000.0
+  min_altitude_m: 1000.0
+  max_altitude_m: 20000.0
+  speed_min_mps: 250.0
+  speed_max_mps: 600.0
+  terminal_ground: -20.0
+  terminal_hit: -10.0
+  terminal_success: 10.0
+  terminal_exhausted: 10.0
+  terminal_timeout: 0.0
+  shaping_scale: 0.1
+  smooth_weight: -0.02
