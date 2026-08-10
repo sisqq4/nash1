@@ -64,6 +64,8 @@ def build_blue_escape_env(
             built.config,
             blue_min_speed_mps=platform_config.min_speed,
             blue_max_speed_mps=platform_config.max_speed,
+            blue_min_altitude_m=platform_config.min_altitude,
+            blue_max_altitude_m=platform_config.max_altitude,
         )
         return built
     world = world_factory(seed)

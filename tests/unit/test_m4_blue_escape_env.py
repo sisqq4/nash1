@@ -29,10 +29,11 @@ def test_substep_hit_ends_early():
     r = BlueEscapeEnv(world, catalog(), "zdj").step(0)
     assert r.terminated and r.info["outcome"] == "hit" and r.info["substeps"] < 20
 
-def test_y_altitude_ground_collision():
+def test_blue_altitude_is_hard_limited_by_flight_envelope():
     world = SimulationWorld(blue=blue(y=0.1), clock=SimulationClock())
     r = BlueEscapeEnv(world, catalog(), "zdj").step(16)
-    assert r.terminated and r.info["outcome"] == "crash"
+    assert world.blue.kinematics.position.y == 8000.0
+    assert r.info["outcome"] != "crash"
 
 def test_single_and_multi_missile_observation_padding_mask():
     b=blue(); builder=ObservationBuilder(ObservationConfig(m_max=3))
@@ -71,9 +72,9 @@ def test_success_exhausted_and_timeout_conditions():
     timeout = BlueEscapeEnv(active, catalog(), "zdj", max_policy_steps=1).step(0)
     assert timeout.truncated and timeout.info["outcome"] == "timeout"
 
-def test_closest_approach_event_does_not_invalidate_threat_immediately():
+def test_small_closest_approach_growth_does_not_invalidate_threat():
     world = SimulationWorld(blue=blue(), missiles=[missile(x=-10, v=900, psi=3.14159)], clock=SimulationClock(), config=WorldConfig(kill_radius_m=1.0, success_distance_m=1_000_000.0))
     res = BlueEscapeEnv(world, catalog(), "zdj").step(0)
-    assert any(event.kind == "closest_approach_passed" for event in res.info["events"])
+    assert not any(event.kind == "missile_passed" for event in res.info["events"])
     assert world.missiles[0].alive
     assert res.info["outcome"] == "running"

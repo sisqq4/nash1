@@ -105,7 +105,7 @@ class EscapeReward:
             self._update_previous(snapshot, action_id)
             return terminal, comps
 
-        active = [m for m in snapshot.missiles if m.alive and m.locked]
+        active = [m for m in snapshot.missiles if m.alive]
         if len(active) > 1:
             comps = self._compute_multi(snapshot, action_id)
         else:
@@ -205,7 +205,7 @@ def _terminal_reward(outcome: str, config: RewardConfig) -> float:
 
 
 def _active(snapshot: WorldSnapshot) -> list[MissileState]:
-    return [m for m in snapshot.missiles if m.alive and m.locked]
+    return [m for m in snapshot.missiles if m.alive]
 
 
 def _primary_threat(snapshot: WorldSnapshot) -> MissileState | None:

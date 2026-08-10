@@ -51,10 +51,13 @@ class BlueEscapeEnv:
         outcome = "running"
         if any(event.kind == "hit" for event in events): outcome = "hit"
         elif any(event.kind == "ground_collision" for event in events): outcome = "crash"
-        elif snapshot.missiles and not any(m.alive and m.locked for m in snapshot.missiles): outcome = "exhausted"
+        elif snapshot.missiles and not any(m.alive for m in snapshot.missiles): outcome = "exhausted"
         elif self.world.all_live_threats_safely_passed(): outcome = "success"
         elif snapshot.time_s >= self.max_time_s: outcome = "timeout"
         if self.max_policy_steps is not None and self.policy_steps >= self.max_policy_steps and outcome == "running": outcome = "timeout"
+        if outcome == "timeout":
+            self.world.fail_all_missiles("mission_timeout")
+            snapshot = self.world.snapshot()
         self.last_outcome = _to_outcome(outcome)
         terminated = outcome in {"hit", "crash", "success", "exhausted"}
         truncated = outcome == "timeout"

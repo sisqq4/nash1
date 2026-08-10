@@ -37,7 +37,7 @@ class ObservationBuilder:
             normalize_angle_rad(b.angles.psi) / math.pi,
             current_action / 28.0,
         ]
-        active = [m for m in missiles if m.alive and m.locked]
+        active = [m for m in missiles if m.alive]
         active.sort(key=lambda m: _distance(blue, m))
         mask = np.zeros(self.config.m_max, dtype=bool)
         for slot in range(self.config.m_max):
