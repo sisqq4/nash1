@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import argparse
 
-from air_combat_rl.io.acmi_writer import trajectory_jsonl_to_acmi
-from air_combat_rl.io.coordinate_transform import GeodeticOrigin
+from src.air_combat_rl.io.acmi_writer import trajectory_jsonl_to_acmi
+from src.air_combat_rl.io.coordinate_transform import GeodeticOrigin
 
 
 def parse_args(argv=None):

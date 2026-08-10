@@ -7,8 +7,8 @@ import time
 
 import numpy as np
 
-from air_combat_rl.algorithms.common.device import require_torch
-from air_combat_rl.algorithms.ppo.vector_rollout_buffer import VectorRolloutBuffer
+from src.air_combat_rl.algorithms.common.device import require_torch
+from src.air_combat_rl.algorithms.ppo.vector_rollout_buffer import VectorRolloutBuffer
 
 torch = require_torch()
 

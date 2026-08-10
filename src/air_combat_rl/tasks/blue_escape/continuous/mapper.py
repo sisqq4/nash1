@@ -2,10 +2,10 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import math
-from air_combat_rl.core.units import STANDARD_GRAVITY
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.states import FlightState
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
+from src.air_combat_rl.core.units import STANDARD_GRAVITY
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.states import FlightState
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
 
 @dataclass(frozen=True, slots=True)
 class EffectVector: dV_dt: float; dgamma_dt: float; dpsi_dt: float

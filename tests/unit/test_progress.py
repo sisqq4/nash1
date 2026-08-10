@@ -1,4 +1,4 @@
-from air_combat_rl.io.progress import ExperimentProgress
+from src.air_combat_rl.io.progress import ExperimentProgress
 
 
 def test_progress_reports_win_rate_and_convergence_metrics(capsys):

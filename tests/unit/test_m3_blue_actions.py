@@ -1,11 +1,11 @@
 import math
 from pathlib import Path
 
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.domain.dynamics.aircraft_3dof import aircraft_derivative
-from air_combat_rl.domain.states import FlightPathAngles, FlightState, VecXZY
-from air_combat_rl.tasks.blue_escape.action_catalog import SAFE_FALLBACK_ACTION_ID, ActionCatalog
-from air_combat_rl.tasks.blue_escape.action_hold import HeldAction
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.domain.dynamics.aircraft_3dof import aircraft_derivative
+from src.air_combat_rl.domain.states import FlightPathAngles, FlightState, VecXZY
+from src.air_combat_rl.tasks.blue_escape.action_catalog import SAFE_FALLBACK_ACTION_ID, ActionCatalog
+from src.air_combat_rl.tasks.blue_escape.action_hold import HeldAction
 
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ActionCatalog.from_yaml(str(ROOT / "configs/actions/blue_29.yaml"))

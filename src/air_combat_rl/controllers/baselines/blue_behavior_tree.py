@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import random
-from air_combat_rl.core.coordinates import normalize_angle_rad
-from air_combat_rl.core.math3d import flight_velocity
-from air_combat_rl.simulation.snapshot import WorldSnapshot
+from src.air_combat_rl.core.coordinates import normalize_angle_rad
+from src.air_combat_rl.core.math3d import flight_velocity
+from src.air_combat_rl.simulation.snapshot import WorldSnapshot
 from collections.abc import Sequence
 
 

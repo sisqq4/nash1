@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 import yaml
-from air_combat_rl.runtime import build_blue_escape_env, build_algorithm_runtime
-from air_combat_rl.training.runner import run_training
+from src.air_combat_rl.runtime import build_blue_escape_env, build_algorithm_runtime
+from src.air_combat_rl.training.runner import run_training
 
 def _load_algorithm_config(path: Path) -> dict:
     config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -20,7 +20,7 @@ def main():
     args=ap.parse_args()
     cfg=_load_algorithm_config(Path(args.algorithm)); cfg['seed']=args.seed
     if cfg.get('algorithm',{}).get('backend') == 'torch':
-        from air_combat_rl.training.torch_runner import run_torch_training
+        from src.air_combat_rl.training.torch_runner import run_torch_training
         result=run_torch_training(algorithm_config=cfg,actions=args.actions,platform=args.platform,seed=args.seed,output_dir=args.output_dir,total_steps=args.total_steps,checkpoint_interval=args.checkpoint_interval,device=args.device,num_envs=args.num_envs,env_backend=args.env_backend,start_method=args.worker_start_method,scenario=args.scenario,curriculum=args.curriculum,max_policy_steps=args.max_policy_steps,resume=args.resume,amp=args.amp)
         print(json.dumps(result,sort_keys=True)); return
     if args.curriculum: raise SystemExit('--curriculum requires an algorithm config with algorithm.backend: torch')

@@ -5,8 +5,8 @@ import math
 
 import pytest
 
-from air_combat_rl.io.acmi_writer import AcmiFormatError, AcmiWriter, trajectory_jsonl_to_acmi
-from air_combat_rl.io.coordinate_transform import GeodeticOrigin, heading_deg, xzy_to_geodetic
+from src.air_combat_rl.io.acmi_writer import AcmiFormatError, AcmiWriter, trajectory_jsonl_to_acmi
+from src.air_combat_rl.io.coordinate_transform import GeodeticOrigin, heading_deg, xzy_to_geodetic
 
 
 ORIGIN = GeodeticOrigin(45.0, 10.0, 100.0)

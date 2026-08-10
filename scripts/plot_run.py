@@ -1,6 +1,6 @@
 """Generate plots from an existing single-scenario run; never runs simulation."""
 import argparse
-from air_combat_rl.visualization import PlotDataError, plot_run
+from src.air_combat_rl.visualization import PlotDataError, plot_run
 
 def main(argv=None):
     p=argparse.ArgumentParser(); p.add_argument("--run-dir",required=True); p.add_argument("--output-dir")

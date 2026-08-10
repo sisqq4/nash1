@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import numpy as np
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.states import FlightState
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.states import FlightState
 
 @dataclass(frozen=True, slots=True)
 class ContinuousActionBounds:

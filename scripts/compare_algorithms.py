@@ -1,6 +1,6 @@
 """Compare existing evaluation outputs under validated identical conditions."""
 import argparse
-from air_combat_rl.visualization import PlotDataError, compare_evaluations
+from src.air_combat_rl.visualization import PlotDataError, compare_evaluations
 
 def main(argv=None):
     p=argparse.ArgumentParser(); p.add_argument("--evaluations",nargs="+",required=True); p.add_argument("--output-dir",required=True)

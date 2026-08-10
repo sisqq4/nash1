@@ -3,16 +3,16 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from air_combat_rl.algorithms.ppo.torch_actor_critic import (
+from src.air_combat_rl.algorithms.ppo.torch_actor_critic import (
     TorchPPOActorCritic,
 )  # noqa: E402
-from air_combat_rl.algorithms.ppo.vector_rollout_buffer import (
+from src.air_combat_rl.algorithms.ppo.vector_rollout_buffer import (
     VectorRolloutBuffer,
 )  # noqa: E402
-from air_combat_rl.evaluation.parallel_evaluator import (
+from src.air_combat_rl.evaluation.parallel_evaluator import (
     run_parallel_torch_evaluation,
 )  # noqa: E402
-from air_combat_rl.training.torch_runner import run_torch_training  # noqa: E402
+from src.air_combat_rl.training.torch_runner import run_torch_training  # noqa: E402
 
 
 def test_torch_actor_is_batched_and_all_parameters_receive_gradients():

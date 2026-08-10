@@ -4,7 +4,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 import json, os, tempfile
 import numpy as np
-from air_combat_rl.io.progress import ExperimentProgress
+from src.air_combat_rl.io.progress import ExperimentProgress
 
 class CheckpointTypeError(ValueError): pass
 
@@ -89,5 +89,5 @@ def run_training(runtime, *, output_dir, algorithm_config, seed, total_steps=64,
 
 def build_algorithm_runtime(config: dict, env):
     """Backward-compatible import location for algorithm runtime construction."""
-    from air_combat_rl.runtime import build_algorithm_runtime as _build_algorithm_runtime
+    from src.air_combat_rl.runtime import build_algorithm_runtime as _build_algorithm_runtime
     return _build_algorithm_runtime(config, env)

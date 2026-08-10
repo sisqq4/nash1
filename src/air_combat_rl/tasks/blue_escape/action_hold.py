@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
 
 
 @dataclass(slots=True)

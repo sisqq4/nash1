@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from air_combat_rl.core.coordinates import VecXZY, normalize_angle_rad
-from air_combat_rl.core.units import EPS_COS_GAMMA, EPS_SPEED
-from air_combat_rl.domain.states import FlightPathAngles, FlightState
+from src.air_combat_rl.core.coordinates import VecXZY, normalize_angle_rad
+from src.air_combat_rl.core.units import EPS_COS_GAMMA, EPS_SPEED
+from src.air_combat_rl.domain.states import FlightPathAngles, FlightState
 
 
 def safe_speed(speed: float) -> float:

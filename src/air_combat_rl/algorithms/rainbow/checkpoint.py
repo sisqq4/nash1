@@ -1,6 +1,6 @@
 from __future__ import annotations
 import pickle
-from air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
+from src.air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
 class RainbowCheckpointError(ValueError): pass
 def save_rainbow_checkpoint(path, trainer, config=None):
     payload={"metadata":{"algorithm_name":"rainbow_dqn","action_interface":"discrete_29"},"q_network":trainer.q_network.state_dict(),"target_network":trainer.target_network.state_dict(),"global_step":trainer.global_step,"config":config}

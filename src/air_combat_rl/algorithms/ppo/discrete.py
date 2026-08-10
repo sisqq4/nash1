@@ -2,8 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
-from air_combat_rl.algorithms.ppo.loss import clipped_surrogate_loss
-from air_combat_rl.algorithms.ppo.rollout_buffer import RolloutBuffer
+from src.air_combat_rl.algorithms.ppo.loss import clipped_surrogate_loss
+from src.air_combat_rl.algorithms.ppo.rollout_buffer import RolloutBuffer
 
 LOG_2PI = float(np.log(2.0 * np.pi))
 
@@ -47,7 +47,7 @@ class DiscretePPOPolicy:
     def __init__(self, actor_critic, env): self.actor_critic=actor_critic; self.env=env
     def act(self, observation, deterministic=False):
         mask=self.env.actions.action_mask(self.env.platform); s=self.actor_critic.act(observation,mask,deterministic); cmd=self.env.actions.command_for(s.action_id,self.env.platform)
-        from air_combat_rl.interfaces.policy import PolicyDecision
+        from src.air_combat_rl.interfaces.policy import PolicyDecision
         return PolicyDecision(self.algorithm_name, s.logits, None, None, s.action_id, cmd, 0.0, s.value, s.log_prob)
 
 class PPODiscreteTrainer:

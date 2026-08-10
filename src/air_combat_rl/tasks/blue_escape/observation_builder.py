@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import numpy as np
-from air_combat_rl.core.coordinates import VecXZY, normalize_angle_rad
-from air_combat_rl.core.math3d import flight_velocity, global_to_local
-from air_combat_rl.domain.states import AircraftState, MissileState
+from src.air_combat_rl.core.coordinates import VecXZY, normalize_angle_rad
+from src.air_combat_rl.core.math3d import flight_velocity, global_to_local
+from src.air_combat_rl.domain.states import AircraftState, MissileState
 
 
 @dataclass(frozen=True, slots=True)

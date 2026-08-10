@@ -5,9 +5,9 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 import yaml
-from air_combat_rl.core.math3d import flight_velocity
-from air_combat_rl.domain.states import MissileState
-from air_combat_rl.simulation.snapshot import WorldSnapshot
+from src.air_combat_rl.core.math3d import flight_velocity
+from src.air_combat_rl.domain.states import MissileState
+from src.air_combat_rl.simulation.snapshot import WorldSnapshot
 
 
 @dataclass(frozen=True, slots=True)

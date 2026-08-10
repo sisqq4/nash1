@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import math
-from air_combat_rl.core.math3d import euler_step, flight_velocity, safe_cos_gamma, safe_speed
-from air_combat_rl.core.units import STANDARD_GRAVITY
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.states import FlightPathAngles, KinematicState
+from src.air_combat_rl.core.math3d import euler_step, flight_velocity, safe_cos_gamma, safe_speed
+from src.air_combat_rl.core.units import STANDARD_GRAVITY
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.states import FlightPathAngles, KinematicState
 
 
 def aircraft_derivative(state: KinematicState, command: ManeuverCommand) -> KinematicState:

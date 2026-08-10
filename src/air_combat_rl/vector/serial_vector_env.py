@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from air_combat_rl.vector.env_factory import make_env
-from air_combat_rl.vector.types import EnvSpec, VectorStepResult
+from src.air_combat_rl.vector.env_factory import make_env
+from src.air_combat_rl.vector.types import EnvSpec, VectorStepResult
 
 
 class SerialVectorEnv:

@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any, Iterable, TextIO
 
-from air_combat_rl.io.coordinate_transform import (
+from src.air_combat_rl.io.coordinate_transform import (
     GeodeticOrigin,
     heading_deg,
     pitch_deg,

@@ -9,7 +9,7 @@ import random
 
 import yaml
 
-from air_combat_rl.vector.types import EnvSpec
+from src.air_combat_rl.vector.types import EnvSpec
 
 SUPPORTED_METRICS = {
     "success_rate",

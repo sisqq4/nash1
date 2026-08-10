@@ -2,9 +2,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import numpy as np
-from air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
-from air_combat_rl.algorithms.ppo.loss import clipped_surrogate_loss
-from air_combat_rl.algorithms.ppo.rollout_buffer import RolloutBuffer
+from src.air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
+from src.air_combat_rl.algorithms.ppo.loss import clipped_surrogate_loss
+from src.air_combat_rl.algorithms.ppo.rollout_buffer import RolloutBuffer
 
 @dataclass(frozen=True, slots=True)
 class PPOTrainerConfig:

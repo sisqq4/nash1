@@ -1,8 +1,8 @@
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState
-from air_combat_rl.simulation.world import SimulationWorld
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState
+from src.air_combat_rl.simulation.world import SimulationWorld
 
 
 def test_world_steps_one_policy_interval_with_physical_command():

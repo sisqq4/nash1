@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.core.coordinates import VecXZY
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,18 +4,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 import math
 
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.core.math3d import flight_velocity, global_to_local
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.core.units import STANDARD_GRAVITY
-from air_combat_rl.domain.collision.closest_approach import segment_closest_approach
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.dynamics.aircraft_3dof import integrate_aircraft
-from air_combat_rl.domain.dynamics.missile_3dof import MissileCommand, integrate_missile, proportional_navigation_command
-from air_combat_rl.domain.events import SimulationEvent
-from air_combat_rl.domain.propulsion.drag import DragResult, missile_drag
-from air_combat_rl.domain.states import AircraftState, KinematicState, MissileState
-from air_combat_rl.simulation.snapshot import WorldSnapshot
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.core.math3d import flight_velocity, global_to_local
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.core.units import STANDARD_GRAVITY
+from src.air_combat_rl.domain.collision.closest_approach import segment_closest_approach
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.dynamics.aircraft_3dof import integrate_aircraft
+from src.air_combat_rl.domain.dynamics.missile_3dof import MissileCommand, integrate_missile, proportional_navigation_command
+from src.air_combat_rl.domain.events import SimulationEvent
+from src.air_combat_rl.domain.propulsion.drag import DragResult, missile_drag
+from src.air_combat_rl.domain.states import AircraftState, KinematicState, MissileState
+from src.air_combat_rl.simulation.snapshot import WorldSnapshot
 
 
 @dataclass(frozen=True, slots=True)

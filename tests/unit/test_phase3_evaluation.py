@@ -2,10 +2,10 @@ import csv, json, subprocess, sys
 from pathlib import Path
 import pytest
 
-from air_combat_rl.evaluation.metrics import summarize_episodes
-from air_combat_rl.evaluation.evaluator import EvaluationError, run_evaluation
-from air_combat_rl.runtime import build_blue_escape_env, build_algorithm_runtime
-from air_combat_rl.training.runner import save_checkpoint
+from src.air_combat_rl.evaluation.metrics import summarize_episodes
+from src.air_combat_rl.evaluation.evaluator import EvaluationError, run_evaluation
+from src.air_combat_rl.runtime import build_blue_escape_env, build_algorithm_runtime
+from src.air_combat_rl.training.runner import save_checkpoint
 
 
 def rows():
@@ -79,7 +79,7 @@ def test_episode_state_isolation_and_projected_deterministic_projection(tmp_path
 
 
 def test_projected_ppo_uses_training_wrapper_squashed_action_and_reloads_checkpoint_each_episode(tmp_path, monkeypatch):
-    from air_combat_rl.evaluation import evaluator
+    from src.air_combat_rl.evaluation import evaluator
 
     ck=_checkpoint(tmp_path,'ppo_projected')
     seen=[]
