@@ -10,18 +10,18 @@ import json
 import numpy as np
 import yaml
 
-from air_combat_rl.algorithms.common.device import (
+from src.air_combat_rl.algorithms.common.device import (
     describe_device,
     require_torch,
     resolve_device,
 )
-from air_combat_rl.algorithms.ppo.torch_actor_critic import TorchPPOActorCritic
-from air_combat_rl.evaluation.metrics import summarize_episodes
-from air_combat_rl.evaluation.report import render_report
-from air_combat_rl.io.trajectory_writer import normalize_json
-from air_combat_rl.io.progress import ExperimentProgress
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
-from air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
+from src.air_combat_rl.algorithms.ppo.torch_actor_critic import TorchPPOActorCritic
+from src.air_combat_rl.evaluation.metrics import summarize_episodes
+from src.air_combat_rl.evaluation.report import render_report
+from src.air_combat_rl.io.trajectory_writer import normalize_json
+from src.air_combat_rl.io.progress import ExperimentProgress
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
+from src.air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
 
 torch = require_torch()
 

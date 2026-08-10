@@ -2,13 +2,13 @@ import math
 
 import pytest
 
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.core.math3d import flight_velocity, global_to_local, local_to_global
-from air_combat_rl.core.units import STANDARD_GRAVITY
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.dynamics.aircraft_3dof import integrate_aircraft
-from air_combat_rl.domain.dynamics.missile_3dof import MissileCommand, integrate_missile
-from air_combat_rl.domain.states import FlightPathAngles, FlightState
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.core.math3d import flight_velocity, global_to_local, local_to_global
+from src.air_combat_rl.core.units import STANDARD_GRAVITY
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.dynamics.aircraft_3dof import integrate_aircraft
+from src.air_combat_rl.domain.dynamics.missile_3dof import MissileCommand, integrate_missile
+from src.air_combat_rl.domain.states import FlightPathAngles, FlightState
 
 
 def state(speed=100.0, gamma=0.0, psi=0.0):

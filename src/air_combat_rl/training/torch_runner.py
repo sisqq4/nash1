@@ -14,18 +14,18 @@ import hashlib
 import numpy as np
 import yaml
 
-from air_combat_rl.algorithms.common.device import (
+from src.air_combat_rl.algorithms.common.device import (
     describe_device,
     require_torch,
     resolve_device,
     seed_everything,
 )
-from air_combat_rl.algorithms.ppo.torch_actor_critic import TorchPPOActorCritic
-from air_combat_rl.algorithms.ppo.torch_trainer import TorchPPOConfig, TorchPPOTrainer
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
-from air_combat_rl.training.curriculum import CurriculumConfig, CurriculumScheduler
-from air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
-from air_combat_rl.io.progress import ExperimentProgress
+from src.air_combat_rl.algorithms.ppo.torch_actor_critic import TorchPPOActorCritic
+from src.air_combat_rl.algorithms.ppo.torch_trainer import TorchPPOConfig, TorchPPOTrainer
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
+from src.air_combat_rl.training.curriculum import CurriculumConfig, CurriculumScheduler
+from src.air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
+from src.air_combat_rl.io.progress import ExperimentProgress
 
 torch = require_torch()
 CHECKPOINT_SCHEMA_VERSION = 3

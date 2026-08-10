@@ -11,11 +11,11 @@ import random
 import numpy as np
 import yaml
 
-from air_combat_rl.evaluation.metrics import summarize_episodes
-from air_combat_rl.evaluation.report import render_report
-from air_combat_rl.io.trajectory_writer import normalize_json
-from air_combat_rl.io.progress import ExperimentProgress
-from air_combat_rl.runtime import build_algorithm_runtime, build_blue_escape_env
+from src.air_combat_rl.evaluation.metrics import summarize_episodes
+from src.air_combat_rl.evaluation.report import render_report
+from src.air_combat_rl.io.trajectory_writer import normalize_json
+from src.air_combat_rl.io.progress import ExperimentProgress
+from src.air_combat_rl.runtime import build_algorithm_runtime, build_blue_escape_env
 
 
 class EvaluationError(ValueError):
@@ -76,7 +76,7 @@ class ConstantPolicy:
         self.action_id = int(action_id)
 
     def act(self, obs, deterministic: bool = False):
-        from air_combat_rl.interfaces.policy import PolicyDecision
+        from src.air_combat_rl.interfaces.policy import PolicyDecision
 
         mask = self.env.actions.action_mask(self.env.platform)
         if self.action_id < 0 or self.action_id >= len(mask) or not mask[self.action_id]:
@@ -93,7 +93,7 @@ class RandomValidPolicy:
         self.rng = random.Random(seed)
 
     def act(self, obs, deterministic: bool = False):
-        from air_combat_rl.interfaces.policy import PolicyDecision
+        from src.air_combat_rl.interfaces.policy import PolicyDecision
 
         valid = [i for i, allowed in enumerate(self.env.actions.action_mask(self.env.platform)) if allowed]
         action_id = valid[0] if deterministic else self.rng.choice(valid)
@@ -193,7 +193,7 @@ def run_evaluation(
 ):
     cfg = load_yaml(algorithm_config_path) if algorithm_config_path else {"algorithm": {"name": "constant"}}
     if cfg.get("algorithm", {}).get("backend") == "torch":
-        from air_combat_rl.evaluation.parallel_evaluator import run_parallel_torch_evaluation
+        from src.air_combat_rl.evaluation.parallel_evaluator import run_parallel_torch_evaluation
         try:
             return run_parallel_torch_evaluation(scenarios=scenarios, actions=actions, algorithm_config_path=algorithm_config_path, checkpoint=checkpoint, platform=platform, episodes=episodes, seeds=seeds, deterministic=deterministic, output_dir=output_dir, max_policy_steps=max_policy_steps, device=device, num_envs=num_envs, env_backend=env_backend, start_method=start_method)
         except (ValueError, RuntimeError, OSError) as exc:

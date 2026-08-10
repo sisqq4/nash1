@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from air_combat_rl.io.trajectory_writer import SerializationError, TrajectoryWriter, normalize_json
-from air_combat_rl.runtime import build_blue_escape_env
+from src.air_combat_rl.io.trajectory_writer import SerializationError, TrajectoryWriter, normalize_json
+from src.air_combat_rl.runtime import build_blue_escape_env
 from scripts.run_scenario import main
 
 
@@ -53,8 +53,14 @@ def test_random_valid_seed_reproducible_and_masked(tmp_path):
     assert all(r["action_mask"][r["action_id"]] for r in lines_a)
 
 
-def test_cli_help():
-    proc = subprocess.run([sys.executable, "scripts/run_scenario.py", "--help"], env={"PYTHONPATH": "src"}, text=True, capture_output=True)
+def test_cli_help(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "run_scenario.py"
+    proc = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+    )
     assert proc.returncode == 0
     assert "--scenario" in proc.stdout
 

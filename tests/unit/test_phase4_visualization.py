@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.image as mpimg
 import pytest
 
-from air_combat_rl.visualization import PlotDataError, compare_evaluations, plot_evaluation, plot_run
+from src.air_combat_rl.visualization import PlotDataError, compare_evaluations, plot_evaluation, plot_run
 
 
 def _step(t, blue, missiles, reward=1.0, components=None, outcome="running"):

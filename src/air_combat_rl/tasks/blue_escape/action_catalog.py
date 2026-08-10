@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.commands import ManeuverCommand
 
 SAFE_FALLBACK_ACTION_ID = 0
 

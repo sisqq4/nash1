@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 import math, random
 from pathlib import Path
 import yaml
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState, MissileState
-from air_combat_rl.simulation.world import SimulationWorld, WorldConfig
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState, MissileState
+from src.air_combat_rl.simulation.world import SimulationWorld, WorldConfig
 
 
 @dataclass(frozen=True, slots=True)

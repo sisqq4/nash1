@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.core.math3d import euler_step, flight_velocity, global_to_local, safe_cos_gamma, safe_speed
-from air_combat_rl.core.units import STANDARD_GRAVITY
-from air_combat_rl.domain.states import FlightPathAngles, KinematicState
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.core.math3d import euler_step, flight_velocity, global_to_local, safe_cos_gamma, safe_speed
+from src.air_combat_rl.core.units import STANDARD_GRAVITY
+from src.air_combat_rl.domain.states import FlightPathAngles, KinematicState
 
 
 @dataclass(frozen=True, slots=True)

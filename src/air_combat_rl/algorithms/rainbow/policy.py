@@ -1,8 +1,8 @@
 """Compatibility adapter for existing Rainbow DQN discrete policies/checkpoints."""
 from __future__ import annotations
 import numpy as np
-from air_combat_rl.interfaces.policy import PolicyDecision
-from air_combat_rl.algorithms.rainbow.checkpoint import RainbowCheckpointError, load_rainbow_checkpoint
+from src.air_combat_rl.interfaces.policy import PolicyDecision
+from src.air_combat_rl.algorithms.rainbow.checkpoint import RainbowCheckpointError, load_rainbow_checkpoint
 class RainbowDQNPolicyAdapter:
     """Wrap a discrete Q-network/legacy policy without changing Rainbow action semantics."""
     algorithm_name="rainbow_dqn"

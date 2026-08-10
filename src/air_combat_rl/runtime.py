@@ -7,11 +7,11 @@ import random
 
 import numpy as np
 
-from air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
-from air_combat_rl.domain.platform_config import PlatformConfig
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
-from air_combat_rl.tasks.blue_escape.environment import BlueEscapeEnv
-from air_combat_rl.tasks.blue_escape.rewards.components import RewardConfig
+from src.air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
+from src.air_combat_rl.domain.platform_config import PlatformConfig
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
+from src.air_combat_rl.tasks.blue_escape.environment import BlueEscapeEnv
+from src.air_combat_rl.tasks.blue_escape.rewards.components import RewardConfig
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -81,14 +81,14 @@ def build_blue_escape_env(
     env = BlueEscapeEnv(world, actions, platform, max_time_s=scenario.max_episode_time_s, max_policy_steps=max_policy_steps, world_factory=world_factory, initial_seed=seed, reward_config=reward_config, platform_config=platform_config)
     return env, RuntimeConfig(str(scenario_path), str(actions_path), platform, seed, scenario, max_policy_steps, str(platform_path), str(reward_path), platform_config, reward_config)
 
-from air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
-from air_combat_rl.algorithms.ppo.policy import ProjectedPPOPolicy
-from air_combat_rl.algorithms.ppo.trainer import PPOProjectedTrainer, PPOTrainerConfig
-from air_combat_rl.algorithms.ppo.discrete import PPODiscreteActorCritic, PPODiscreteTrainer, PPODiscreteTrainerConfig, DiscretePPOPolicy
-from air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
-from air_combat_rl.algorithms.rainbow.policy import RainbowDQNPolicyAdapter
-from air_combat_rl.algorithms.rainbow.trainer import RainbowDQNTrainer, RainbowTrainerConfig
-from air_combat_rl.tasks.blue_escape.continuous.wrapper import ProjectedContinuousActionWrapper
+from src.air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
+from src.air_combat_rl.algorithms.ppo.policy import ProjectedPPOPolicy
+from src.air_combat_rl.algorithms.ppo.trainer import PPOProjectedTrainer, PPOTrainerConfig
+from src.air_combat_rl.algorithms.ppo.discrete import PPODiscreteActorCritic, PPODiscreteTrainer, PPODiscreteTrainerConfig, DiscretePPOPolicy
+from src.air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
+from src.air_combat_rl.algorithms.rainbow.policy import RainbowDQNPolicyAdapter
+from src.air_combat_rl.algorithms.rainbow.trainer import RainbowDQNTrainer, RainbowTrainerConfig
+from src.air_combat_rl.tasks.blue_escape.continuous.wrapper import ProjectedContinuousActionWrapper
 
 @dataclass(frozen=True, slots=True)
 class AlgorithmRuntime:

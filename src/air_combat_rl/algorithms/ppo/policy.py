@@ -1,8 +1,8 @@
 from __future__ import annotations
-from air_combat_rl.interfaces.policy import PolicyDecision
-from air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
-from air_combat_rl.tasks.blue_escape.continuous.projector import ContinuousCommandProjector
-from air_combat_rl.tasks.blue_escape.continuous.mapper import NearestManeuverMapper
+from src.air_combat_rl.interfaces.policy import PolicyDecision
+from src.air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
+from src.air_combat_rl.tasks.blue_escape.continuous.projector import ContinuousCommandProjector
+from src.air_combat_rl.tasks.blue_escape.continuous.mapper import NearestManeuverMapper
 class ProjectedPPOPolicy:
     def __init__(self, actor_critic: PPOActorCritic, env, projector=None, mapper=None):
         self.algorithm_name="ppo_projected"; self.actor_critic=actor_critic; self.env=env; self.projector=projector or ContinuousCommandProjector(); self.mapper=mapper or NearestManeuverMapper(env.actions)

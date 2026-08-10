@@ -1,15 +1,15 @@
 import math
 import numpy as np
 
-from air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
-from air_combat_rl.algorithms.ppo.loss import clipped_surrogate_loss
-from air_combat_rl.algorithms.ppo.rollout_buffer import RolloutBuffer
-from air_combat_rl.algorithms.rainbow.policy import RainbowDQNPolicyAdapter
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.states import FlightState, FlightPathAngles
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
-from air_combat_rl.tasks.blue_escape.continuous import ContinuousCommandProjector, NearestManeuverMapper
+from src.air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
+from src.air_combat_rl.algorithms.ppo.loss import clipped_surrogate_loss
+from src.air_combat_rl.algorithms.ppo.rollout_buffer import RolloutBuffer
+from src.air_combat_rl.algorithms.rainbow.policy import RainbowDQNPolicyAdapter
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.states import FlightState, FlightPathAngles
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
+from src.air_combat_rl.tasks.blue_escape.continuous import ContinuousCommandProjector, NearestManeuverMapper
 
 
 def catalog(): return ActionCatalog.from_yaml("configs/actions/blue_29.yaml")
@@ -67,16 +67,16 @@ def test_rainbow_adapter_keeps_discrete_execution_path():
     assert d.executed_action_id == 3
     assert d.bounded_action is None and d.projected_action is None
 
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.domain.states import AircraftState, KinematicState, MissileState
-from air_combat_rl.simulation.world import SimulationWorld
-from air_combat_rl.tasks.blue_escape.environment import BlueEscapeEnv
-from air_combat_rl.tasks.blue_escape.continuous import ProjectedContinuousActionWrapper
-from air_combat_rl.algorithms.ppo.trainer import PPOProjectedTrainer, PPOTrainerConfig
-from air_combat_rl.algorithms.rainbow.trainer import RainbowDQNTrainer, RainbowTrainerConfig
-from air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
-from air_combat_rl.algorithms.rainbow.replay import PrioritizedReplayBuffer
-from air_combat_rl.training.runner import build_algorithm_runtime
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.domain.states import AircraftState, KinematicState, MissileState
+from src.air_combat_rl.simulation.world import SimulationWorld
+from src.air_combat_rl.tasks.blue_escape.environment import BlueEscapeEnv
+from src.air_combat_rl.tasks.blue_escape.continuous import ProjectedContinuousActionWrapper
+from src.air_combat_rl.algorithms.ppo.trainer import PPOProjectedTrainer, PPOTrainerConfig
+from src.air_combat_rl.algorithms.rainbow.trainer import RainbowDQNTrainer, RainbowTrainerConfig
+from src.air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
+from src.air_combat_rl.algorithms.rainbow.replay import PrioritizedReplayBuffer
+from src.air_combat_rl.training.runner import build_algorithm_runtime
 
 
 def make_env(platform="zdj"):
@@ -131,8 +131,8 @@ def test_config_selects_independent_trainers_and_no_shared_buffer():
     assert ppo_rt.trainer.buffer is not dqn_rt.trainer.replay_buffer
 
 import pickle
-from air_combat_rl.algorithms.rainbow.checkpoint import load_rainbow_checkpoint
-from air_combat_rl.algorithms.ppo.checkpoint import load_ppo_checkpoint, save_ppo_checkpoint
+from src.air_combat_rl.algorithms.rainbow.checkpoint import load_rainbow_checkpoint
+from src.air_combat_rl.algorithms.ppo.checkpoint import load_ppo_checkpoint, save_ppo_checkpoint
 
 
 def test_rainbow_legacy_checkpoint_loads_and_ppo_rejects_it(tmp_path):

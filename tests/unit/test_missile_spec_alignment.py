@@ -2,13 +2,13 @@ import math
 
 import pytest
 
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.domain.collision.closest_approach import segment_closest_approach
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.propulsion.drag import atmosphere, missile_drag, zero_lift_drag_coefficient
-from air_combat_rl.domain.states import FlightPathAngles, KinematicState
-from air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
-from air_combat_rl.simulation.world import MissileRuntimeState, WorldConfig
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.domain.collision.closest_approach import segment_closest_approach
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.propulsion.drag import atmosphere, missile_drag, zero_lift_drag_coefficient
+from src.air_combat_rl.domain.states import FlightPathAngles, KinematicState
+from src.air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
+from src.air_combat_rl.simulation.world import MissileRuntimeState, WorldConfig
 
 
 def test_documented_scenario_defaults_and_annular_sector_sampling():

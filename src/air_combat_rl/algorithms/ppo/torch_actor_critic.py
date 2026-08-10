@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from air_combat_rl.algorithms.common.device import require_torch
+from src.air_combat_rl.algorithms.common.device import require_torch
 
 torch = require_torch()
 nn = torch.nn

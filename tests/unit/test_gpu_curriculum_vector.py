@@ -1,9 +1,9 @@
 import numpy as np
 import yaml
 
-from air_combat_rl.algorithms.ppo.vector_rollout_buffer import VectorRolloutBuffer
-from air_combat_rl.training.curriculum import CurriculumConfig, CurriculumScheduler
-from air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
+from src.air_combat_rl.algorithms.ppo.vector_rollout_buffer import VectorRolloutBuffer
+from src.air_combat_rl.training.curriculum import CurriculumConfig, CurriculumScheduler
+from src.air_combat_rl.vector import EnvSpec, SerialVectorEnv, SubprocessVectorEnv
 
 
 def _spec(seed, *, scenario="configs/scenario/fixed_1v1.yaml", max_policy_steps=1):

@@ -1,8 +1,8 @@
 import math
 
-from air_combat_rl.core.coordinates import VecXZY, normalize_angle_rad
-from air_combat_rl.core.timebase import SimulationClock
-from air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.core.coordinates import VecXZY, normalize_angle_rad
+from src.air_combat_rl.core.timebase import SimulationClock
+from src.air_combat_rl.domain.commands import ManeuverCommand
 
 
 def test_vec_xzy_serializes_altitude_as_y():

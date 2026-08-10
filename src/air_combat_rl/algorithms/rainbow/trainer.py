@@ -2,9 +2,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
-from air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
-from air_combat_rl.algorithms.rainbow.replay import PrioritizedReplayBuffer, Transition
-from air_combat_rl.algorithms.rainbow.policy import RainbowDQNPolicyAdapter
+from src.air_combat_rl.algorithms.rainbow.network import RainbowQNetwork
+from src.air_combat_rl.algorithms.rainbow.replay import PrioritizedReplayBuffer, Transition
+from src.air_combat_rl.algorithms.rainbow.policy import RainbowDQNPolicyAdapter
 
 @dataclass(frozen=True, slots=True)
 class RainbowTrainerConfig:

@@ -4,12 +4,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import copy
 import numpy as np
-from air_combat_rl.domain.outcomes import Outcome
-from air_combat_rl.simulation.world import SimulationWorld
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
-from air_combat_rl.tasks.blue_escape.action_hold import HeldAction
-from air_combat_rl.tasks.blue_escape.observation_builder import ObservationBuilder, ObservationConfig
-from air_combat_rl.tasks.blue_escape.rewards.components import EscapeReward, RewardConfig
+from src.air_combat_rl.domain.outcomes import Outcome
+from src.air_combat_rl.simulation.world import SimulationWorld
+from src.air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
+from src.air_combat_rl.tasks.blue_escape.action_hold import HeldAction
+from src.air_combat_rl.tasks.blue_escape.observation_builder import ObservationBuilder, ObservationConfig
+from src.air_combat_rl.tasks.blue_escape.rewards.components import EscapeReward, RewardConfig
 
 @dataclass(frozen=True, slots=True)
 class StepResult:

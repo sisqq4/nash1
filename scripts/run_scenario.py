@@ -11,8 +11,15 @@ import random
 import subprocess
 import sys
 
-from air_combat_rl.io.trajectory_writer import SCHEMA_VERSION, normalize_json, TrajectoryWriter
-from air_combat_rl.runtime import build_blue_escape_env
+# Support running this file directly from an IDE or an arbitrary working
+# directory without requiring an editable install or a manually set
+# PYTHONPATH.  Installed-package imports remain unchanged.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from src.air_combat_rl.io.trajectory_writer import SCHEMA_VERSION, normalize_json, TrajectoryWriter
+from src.air_combat_rl.runtime import build_blue_escape_env
 
 
 def _git_commit() -> str | None:

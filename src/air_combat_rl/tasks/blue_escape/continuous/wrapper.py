@@ -2,8 +2,8 @@
 from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
-from air_combat_rl.tasks.blue_escape.continuous.projector import ContinuousCommandProjector, ContinuousProjectionConfig
-from air_combat_rl.tasks.blue_escape.continuous.mapper import NearestManeuverMapper
+from src.air_combat_rl.tasks.blue_escape.continuous.projector import ContinuousCommandProjector, ContinuousProjectionConfig
+from src.air_combat_rl.tasks.blue_escape.continuous.mapper import NearestManeuverMapper
 
 @dataclass(frozen=True, slots=True)
 class BoxSpace:

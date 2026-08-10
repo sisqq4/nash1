@@ -4,14 +4,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from air_combat_rl.domain.commands import ManeuverCommand
-from air_combat_rl.domain.dynamics.missile_3dof import ProportionalNavigationCommand
-from air_combat_rl.core.units import STANDARD_GRAVITY
-from air_combat_rl.domain.platform_config import PlatformConfig
-from air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
-from air_combat_rl.tasks.blue_escape.rewards.components import RewardConfig
-from air_combat_rl.runtime import build_blue_escape_env
-from air_combat_rl.tasks.blue_escape.continuous.wrapper import ProjectedContinuousActionWrapper
+from src.air_combat_rl.domain.commands import ManeuverCommand
+from src.air_combat_rl.domain.dynamics.missile_3dof import ProportionalNavigationCommand
+from src.air_combat_rl.core.units import STANDARD_GRAVITY
+from src.air_combat_rl.domain.platform_config import PlatformConfig
+from src.air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
+from src.air_combat_rl.tasks.blue_escape.rewards.components import RewardConfig
+from src.air_combat_rl.runtime import build_blue_escape_env
+from src.air_combat_rl.tasks.blue_escape.continuous.wrapper import ProjectedContinuousActionWrapper
 
 
 def test_platform_and_reward_yaml_parameters_are_loaded():

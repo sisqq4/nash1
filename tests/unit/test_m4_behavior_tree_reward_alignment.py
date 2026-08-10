@@ -1,7 +1,7 @@
-from air_combat_rl.core.coordinates import VecXZY
-from air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState, MissileState
-from air_combat_rl.simulation.snapshot import WorldSnapshot
-from air_combat_rl.controllers.baselines.blue_behavior_tree import (
+from src.air_combat_rl.core.coordinates import VecXZY
+from src.air_combat_rl.domain.states import AircraftState, FlightPathAngles, KinematicState, MissileState
+from src.air_combat_rl.simulation.snapshot import WorldSnapshot
+from src.air_combat_rl.controllers.baselines.blue_behavior_tree import (
     A_ACCEL,
     A_CLIMB,
     A_DIVE,
@@ -12,7 +12,7 @@ from air_combat_rl.controllers.baselines.blue_behavior_tree import (
     BlueBehaviorTreeConfig,
     BlueBehaviorTreePolicy,
 )
-from air_combat_rl.tasks.blue_escape.rewards.components import EscapeReward, RewardConfig
+from src.air_combat_rl.tasks.blue_escape.rewards.components import EscapeReward, RewardConfig
 
 
 def blue(y=10000.0, v=300.0, gamma=0.0, psi=0.0):
@@ -63,7 +63,7 @@ def test_reward_terminal_values_match_rule_document_and_nonterminal_has_componen
 
 
 def test_behavior_tree_act_uses_rl_observation_and_action_mask_shape():
-    from air_combat_rl.tasks.blue_escape.observation_builder import ObservationBuilder
+    from src.air_combat_rl.tasks.blue_escape.observation_builder import ObservationBuilder
 
     policy = BlueBehaviorTreePolicy(BlueBehaviorTreeConfig(seed=3))
     obs, _ = ObservationBuilder().build(blue(y=500.0, v=300.0), [missile(x=15000.0)], 0)

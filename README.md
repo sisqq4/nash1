@@ -16,10 +16,10 @@ python -m pip install -e '.[test]'
 
 ## Architecture
 
-1. **Domain simulation kernel** (`air_combat_rl.core`, `air_combat_rl.domain`, `air_combat_rl.simulation`) owns coordinates, units, physical state, 3-DoF dynamics, guidance, propulsion, collision checks, scenarios, events, and snapshots.
-2. **Task layer** (`air_combat_rl.tasks.blue_escape`) adapts the simulation kernel into a blue escape RL task with replaceable actions, observations, rewards, masks, and termination semantics.
-3. **Algorithm layer** (`air_combat_rl.algorithms`) contains scene-agnostic learning code for the supported training schemes.
-4. **Application layer** (`air_combat_rl.training`, `air_combat_rl.evaluation`, `scripts`) wires configs, runners, evaluators, logging, and checkpointing.
+1. **Domain simulation kernel** (`src.air_combat_rl.core`, `src.air_combat_rl.domain`, `src.air_combat_rl.simulation`) owns coordinates, units, physical state, 3-DoF dynamics, guidance, propulsion, collision checks, scenarios, events, and snapshots.
+2. **Task layer** (`src.air_combat_rl.tasks.blue_escape`) adapts the simulation kernel into a blue escape RL task with replaceable actions, observations, rewards, masks, and termination semantics.
+3. **Algorithm layer** (`src.air_combat_rl.algorithms`) contains scene-agnostic learning code for the supported training schemes.
+4. **Application layer** (`src.air_combat_rl.training`, `src.air_combat_rl.evaluation`, `scripts`) wires configs, runners, evaluators, logging, and checkpointing.
 
 Dependency direction is intentionally top-down: dynamics do not import training, PPO, observations, or rewards; algorithms only depend on standard policy/environment interfaces; logging reads events and snapshots and never participates in state transition.
 
@@ -48,7 +48,7 @@ count. Unknown parameters are rejected instead of being silently ignored.
 Run one reproducible scenario without starting training or batch evaluation:
 
 ```bash
-PYTHONPATH=src python scripts/run_scenario.py \
+python scripts/run_scenario.py \
   --scenario configs/scenario/fixed_1v1.yaml \
   --actions configs/actions/blue_29.yaml \
   --platform zdj \
@@ -57,6 +57,11 @@ PYTHONPATH=src python scripts/run_scenario.py \
   --seed 0 \
   --output-dir runs/fixed_1v1_constant
 ```
+
+`run_scenario.py` locates the repository root automatically when
+run directly, including from an IDE or a working directory outside the
+repository. Installing the project in editable mode as shown above remains the
+recommended setup for development and for importing `src.air_combat_rl` elsewhere.
 
 The command writes `manifest.json`, streaming `steps.jsonl`, and `episode_summary.json`. Use `--policy random_valid` to sample only currently legal masked actions with the supplied seed. A non-empty output directory is rejected unless `--overwrite` is passed.
 

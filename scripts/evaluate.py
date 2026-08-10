@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse,json
 from pathlib import Path
 import yaml
-from air_combat_rl.evaluation.evaluator import EvaluationError,run_evaluation
+from src.air_combat_rl.evaluation.evaluator import EvaluationError,run_evaluation
 
 def main(argv=None):
     p=argparse.ArgumentParser();source=p.add_mutually_exclusive_group(required=True);source.add_argument('--scenarios',nargs='+');source.add_argument('--evaluation-suite')
