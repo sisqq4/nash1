@@ -19,7 +19,7 @@ def test_platform_and_reward_yaml_parameters_are_loaded():
     reward = RewardConfig.from_yaml("configs/reward/escape_1v1.yaml")
     assert platform.name == "zdj"
     assert platform.max_g == 9.0
-    assert platform.max_speed == 420.0
+    assert platform.max_speed == 600.0
     assert reward.terminal_ground == -20.0
     assert reward.safe_distance_m == 30_000.0
 
@@ -34,9 +34,9 @@ def test_runtime_loads_configs_outside_repository_working_directory(monkeypatch,
         0,
     )
     wrapped = ProjectedContinuousActionWrapper(env)
-    assert runtime.platform_config.max_speed == 420.0
+    assert runtime.platform_config.max_speed == 600.0
     assert env.reward_model.config.terminal_hit == -10.0
-    assert wrapped.projector.config.max_speed_mps == 420.0
+    assert wrapped.projector.config.max_speed_mps == 600.0
 
 
 def test_multi_threat_runtime_selects_multi_reward(tmp_path):
