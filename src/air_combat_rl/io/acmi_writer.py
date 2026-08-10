@@ -1,4 +1,4 @@
-"""Streaming Tacview ACMI 2.2 export for recorded XZY trajectories."""
+"""Streaming Tacview ACMI 2.1 export for recorded XZY trajectories."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -22,8 +22,8 @@ class AcmiFormatError(ValueError):
 class AcmiWriter:
     """Context-managed, streaming Tacview text writer.
 
-    Object IDs are assigned once from source IDs: blue is ``1`` and missiles
-    start at ``100``. Three-DoF states export no roll value; ``T`` contains
+    Object IDs are assigned once from source IDs: the F16 is ``a1`` and
+    missiles start at ``b1``. Three-DoF states export no roll value; ``T`` contains
     longitude, latitude, altitude, roll, pitch and yaw in the ACMI transform.
     Roll is explicitly zero because the three-DoF model has no roll state.
     """
@@ -37,14 +37,14 @@ class AcmiWriter:
         self.reference_time = _reference_time(reference_time)
         self._fh: TextIO | None = None
         self._last_time = -float("inf")
-        self._ids: dict[str, int] = {"blue": 1}
-        self._next_missile_id = 100
+        self._ids: dict[str, str] = {"blue": "a1"}
+        self._next_missile_id = 1
         self._active: set[str] = set()
 
     def __enter__(self) -> "AcmiWriter":
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("w", encoding="utf-8", newline="\n")
-        self._write("FileType=text/acmi/tacview\nFileVersion=2.2\n")
+        self._write("FileType=text/acmi/tacview\nFileVersion=2.1\n")
         self._write(f"0,ReferenceTime={self.reference_time}\n")
         return self
 
@@ -71,29 +71,28 @@ class AcmiWriter:
                 f"ACMI time must be monotonic: {time_s} follows {self._last_time}"
             )
         self._last_time = time_s
-        self._write(f"#{time_s:.3f}\n")
-        self._write_entity("blue", blue, name="Blue", kind="Air+FixedWing", color="Blue")
+        self._write(f"#{time_s}\n")
         seen = {"blue"}
         for index, missile in enumerate(missiles):
             source_id = str(missile.get("id", f"missile_{index}"))
             if source_id == "blue":
                 raise AcmiFormatError("missile source ID 'blue' is reserved")
             seen.add(source_id)
-            self._write_entity(source_id, missile, name=source_id,
-                               kind="Weapon+Missile", color="Red")
+            self._write_entity(source_id, missile, name="AIM-120", color="Red")
+        self._write_entity("blue", blue, name="F16", color="Blue")
         # Explicit removal is understood by Tacview and preserves stable IDs.
         for source_id in sorted(self._active - seen):
-            self._write(f"-{self._object_id(source_id):X}\n")
+            self._write(f"-{self._object_id(source_id)}\n")
             self._active.remove(source_id)
         for event in events:
             self._write_event(event)
 
     def _write_entity(self, source_id: str, state: dict[str, Any], *,
-                      name: str, kind: str, color: str) -> None:
+                      name: str, color: str) -> None:
         object_id = self._object_id(source_id)
         if not bool(state.get("alive", True)):
             if source_id in self._active:
-                self._write(f"-{object_id:X}\n")
+                self._write(f"-{object_id}\n")
                 self._active.remove(source_id)
             return
         position = state.get("position_xzy_m")
@@ -105,12 +104,12 @@ class AcmiWriter:
         # ACMI's T property is lon|lat|alt|roll|pitch|yaw. Supplying attitude
         # as ad-hoc Heading/Pitch properties is not interpreted by Tacview.
         fields = [
-            f"T={longitude:.8f}|{latitude:.8f}|{altitude:.3f}|0.000|{pitch:.3f}|{heading:.3f}"
+            f"T={longitude}|{latitude}|{altitude}|0.0|{pitch}|{heading}"
         ]
         if source_id not in self._active:
-            fields.extend((f"Name={_clean(name)}", f"Type={kind}", f"Color={color}"))
             self._active.add(source_id)
-        self._write(f"{object_id:X}," + ",".join(fields) + "\n")
+        fields.extend((f"Name={_clean(name)}", f"Color={color}"))
+        self._write(f"{object_id}," + ",".join(fields) + "\n")
 
     def _write_event(self, event: dict[str, Any]) -> None:
         kind = str(event.get("kind", "event"))
@@ -119,14 +118,14 @@ class AcmiWriter:
         entity = str(event.get("entity_id", ""))
         label = "Hit" if kind == "hit" else "Ground collision"
         object_id = self._ids.get(entity)
-        object_field = f"{object_id:X}" if object_id is not None else ""
+        object_field = object_id if object_id is not None else ""
         # Event fields are Type|ObjectId|Longitude|Latitude|Altitude|Radius|Text.
         # Message is a standard ACMI event and retains the simulator event name.
         self._write(f"0,Event=Message|{object_field}|||||{label}\n")
 
-    def _object_id(self, source_id: str) -> int:
+    def _object_id(self, source_id: str) -> str:
         if source_id not in self._ids:
-            self._ids[source_id] = self._next_missile_id
+            self._ids[source_id] = f"b{self._next_missile_id}"
             self._next_missile_id += 1
         return self._ids[source_id]
 

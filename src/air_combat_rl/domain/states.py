@@ -50,3 +50,4 @@ class MissileState:
     locked: bool
     powered: bool
     age_s: float
+    launch_time_s: float = 0.0

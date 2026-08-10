@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 import json, os, tempfile
 import numpy as np
+from air_combat_rl.io.progress import ExperimentProgress
 
 class CheckpointTypeError(ValueError): pass
 
@@ -61,8 +62,11 @@ def run_training(runtime, *, output_dir, algorithm_config, seed, total_steps=64,
     restored=restore_checkpoint(resume,runtime) if resume else None
     (out/'manifest.json').write_text(json.dumps({"algorithm_name":runtime.name,"seed":seed,"algorithm_config":algorithm_config},indent=2),encoding='utf-8')
     episode=int(restored.get('episode',0)) if restored else 0; obs_info=None
-    with (out/'train_metrics.jsonl').open('a',encoding='utf-8') as mf, (out/'episodes.jsonl').open('a',encoding='utf-8') as ef:
+    progress=ExperimentProgress(total_steps,"training","step")
+    try:
+      with (out/'train_metrics.jsonl').open('a',encoding='utf-8') as mf, (out/'episodes.jsonl').open('a',encoding='utf-8') as ef:
         while getattr(runtime.trainer,'global_step',0) < total_steps:
+            iteration_outcomes=[]
             if runtime.name.startswith('ppo'):
                 runtime.trainer.collect_rollout(seed if getattr(runtime.trainer,'global_step',0)==0 else None); stats=runtime.trainer.train_one_update(); metrics=stats if isinstance(stats,dict) else asdict(stats)
             else:
@@ -71,11 +75,14 @@ def run_training(runtime, *, output_dir, algorithm_config, seed, total_steps=64,
                 for _ in range(min(32,total_steps-runtime.trainer.global_step)):
                     res=runtime.trainer.collect_step(obs); ep_reward+=res.reward; ep_len+=1; obs=res.observation
                     if res.terminated or res.truncated:
+                        iteration_outcomes.append(res.info.get('outcome'))
                         ef.write(json.dumps({"episode":episode,"reward":ep_reward,"length":ep_len,"outcome":res.info.get('outcome')})+'\n'); obs,info=runtime.env.reset(); episode+=1; ep_reward=0.0; ep_len=0
                 obs_info=(obs,info); stats=runtime.trainer.train_one_update(); metrics=asdict(stats)
             metrics["algorithm_name"]=runtime.name; mf.write(json.dumps(_jsonable(metrics),sort_keys=True)+'\n'); mf.flush()
             step=int(metrics.get('global_step',getattr(runtime.trainer,'global_step',0)))
+            outcomes=getattr(runtime.trainer,'completed_outcomes',[]); progress.record_outcomes([*iteration_outcomes,*outcomes]); outcomes.clear(); progress.update(step,metrics)
             if step and step % checkpoint_interval == 0: save_checkpoint(ck/f'step_{step}.pt',runtime,algorithm_config=algorithm_config,global_step=step,episode=episode,seed=seed)
+    finally: progress.close()
     step=getattr(runtime.trainer,'global_step',0); save_checkpoint(ck/'latest.pt',runtime,algorithm_config=algorithm_config,global_step=step,episode=episode,seed=seed)
     return {"global_step":step,"output_dir":str(out)}
 

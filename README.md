@@ -60,6 +60,14 @@ PYTHONPATH=src python scripts/run_scenario.py \
 
 The command writes `manifest.json`, streaming `steps.jsonl`, and `episode_summary.json`. Use `--policy random_valid` to sample only currently legal masked actions with the supplied seed. A non-empty output directory is rejected unless `--overwrite` is passed.
 
+Scenario YAML files can configure a regional, staggered red-missile launch with
+`missile_spawn_distance_m`, `missile_spawn_bearing_deg`,
+`missile_spawn_altitude_m`, `missile_first_launch_time_s`, and
+`missile_launch_interval_s`. `blue_heading_deg` sets blue's initial heading and
+`blue_detection_range_m` sets when blue starts executing policy maneuvers;
+before detection it executes the level constant-speed action. See
+`configs/scenario/regional_delayed_1vn.yaml` for a complete example.
+
 ## Training algorithms
 
 The default training algorithm is `ppo_projected`.
@@ -91,6 +99,11 @@ PYTHONPATH=src python scripts/train.py --scenario configs/scenario/fixed_1v1.yam
 ```
 
 Each run writes `manifest.json`, `train_metrics.jsonl`, `episodes.jsonl`, and atomic checkpoints under `checkpoints/latest.pt` plus interval `step_<N>.pt` files. Checkpoints include the algorithm name and are type-checked before algorithm-specific loading/resume code should accept them; do not load `ppo_projected`, `ppo_discrete`, and `rainbow_dqn` checkpoints across algorithm types.
+
+Training and evaluation display live progress bars. Training shows rolling
+success rate together with policy/value loss, entropy, KL divergence, gradient
+norm, and throughput when those metrics are available. Evaluation shows its
+rolling success rate as episodes complete.
 
 Resume a compatible checkpoint into a new or existing output directory. The
 `--total-steps` value is the desired final global step, not an additional count:
@@ -185,9 +198,11 @@ PYTHONPATH=src python scripts/export_acmi.py \
   --output runs/fixed_1v1_constant/trajectory.acmi
 ```
 
-The exporter maps simulation `x` to north/latitude, `z` to east/longitude, and
-`y` to altitude above the supplied origin. It writes stable blue/missile IDs,
-heading from `psi`, pitch from `gamma`, object removal, and supported hit and
+The exporter writes Tacview text ACMI 2.1. It maps simulation `x` to
+north/latitude, `z` to east/longitude, and `y` to altitude above the supplied
+origin. Each frame lists AIM-120 missiles as `b1`, `b2`, ... before the F16 as
+`a1`, including `Name` and `Color` properties. It also writes heading from
+`psi`, pitch from `gamma`, object removal, and supported hit and
 ground-collision events. Because the model is three-DoF, roll is explicitly
 written as zero rather than presenting a fabricated roll attitude.
 

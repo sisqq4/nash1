@@ -51,14 +51,14 @@ class DiscretePPOPolicy:
         return PolicyDecision(self.algorithm_name, s.logits, None, None, s.action_id, cmd, 0.0, s.value, s.log_prob)
 
 class PPODiscreteTrainer:
-    def __init__(self, env, actor_critic, config=None): self.env=env; self.actor_critic=actor_critic; self.config=config or PPODiscreteTrainerConfig(); self.buffer=RolloutBuffer(); self.global_step=0; self._last_metrics={}
+    def __init__(self, env, actor_critic, config=None): self.env=env; self.actor_critic=actor_critic; self.config=config or PPODiscreteTrainerConfig(); self.buffer=RolloutBuffer(); self.global_step=0; self._last_metrics={}; self.completed_outcomes=[]
     def collect_rollout(self, reset_seed=None):
         self.buffer.clear(); obs,info=self.env.reset(reset_seed); ep_start=True; masks=[]; next_obs=[]
         for _ in range(self.config.rollout_steps):
             mask=info["action_mask"]; s=self.actor_critic.act(obs,mask); r=self.env.step(s.action_id)
             self.buffer.add(obs,s.action_id,r.reward,s.value,s.log_prob,r.terminated,r.truncated,ep_start,executed_action_id=s.action_id,action_mask=mask,next_observation=r.observation)
             obs=r.observation; info=r.info; ep_start=r.terminated or r.truncated; self.global_step+=1
-            if ep_start: obs,info=self.env.reset()
+            if ep_start: self.completed_outcomes.append(info.get("outcome")); obs,info=self.env.reset()
         last_value=self.actor_critic.act(obs,info["action_mask"],True).value
         self.buffer.compute_returns_and_advantages(last_value,self.config.gamma,self.config.gae_lambda,bootstrap_truncated=self.config.bootstrap_truncated); return self.buffer
     def _objective(self):

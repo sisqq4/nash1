@@ -6,7 +6,7 @@ import copy
 import numpy as np
 from air_combat_rl.domain.outcomes import Outcome
 from air_combat_rl.simulation.world import SimulationWorld
-from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
+from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog, SAFE_FALLBACK_ACTION_ID
 from air_combat_rl.tasks.blue_escape.action_hold import HeldAction
 from air_combat_rl.tasks.blue_escape.observation_builder import ObservationBuilder, ObservationConfig
 from air_combat_rl.tasks.blue_escape.rewards.components import EscapeReward, RewardConfig
@@ -41,6 +41,10 @@ class BlueEscapeEnv:
         return obs, {"missile_mask": mask, "action_mask": np.asarray(self.actions.action_mask(self.platform), dtype=bool), "initial_missile_count": len(self.world.missiles)}
 
     def step(self, action_id: int) -> StepResult:
+        threat_detected = self.world.blue_detects_threat()
+        requested_action_id = int(action_id)
+        if not threat_detected:
+            action_id = SAFE_FALLBACK_ACTION_ID
         self.held_action.select(action_id, self.platform, self.actions, self.world.clock)
         snapshot, events = self.world.step_held_policy_interval(self.held_action)
         self.policy_steps += 1
@@ -57,7 +61,7 @@ class BlueEscapeEnv:
         reward, comps = self.reward_model.compute(snapshot, outcome, action_id)
         obs, mask = self.observations.build(snapshot.blue, snapshot.missiles, action_id)
         distances = list(getattr(self.world, "min_missile_distances", []))
-        info = {"outcome": outcome, "events": events, "reward_components": comps, "missile_mask": mask, "action_mask": np.asarray(self.actions.action_mask(self.platform), dtype=bool), "substeps": self.world.substeps_last_interval, "time_s": snapshot.time_s, "altitude_y_m": snapshot.blue.kinematics.position.y, "min_sampled_distance_m": min(distances) if distances else None, "alive_missile_count": sum(1 for missile in snapshot.missiles if missile.alive), "locked_missile_count": sum(1 for missile in snapshot.missiles if missile.locked)}
+        info = {"outcome": outcome, "events": events, "reward_components": comps, "missile_mask": mask, "action_mask": np.asarray(self.actions.action_mask(self.platform), dtype=bool), "substeps": self.world.substeps_last_interval, "time_s": snapshot.time_s, "altitude_y_m": snapshot.blue.kinematics.position.y, "min_sampled_distance_m": min(distances) if distances else None, "alive_missile_count": sum(1 for missile in snapshot.missiles if missile.alive), "locked_missile_count": sum(1 for missile in snapshot.missiles if missile.locked), "threat_detected": threat_detected, "requested_action_id": requested_action_id, "executed_action_id": action_id}
         return StepResult(obs, reward, terminated, truncated, info)
 
 

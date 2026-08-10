@@ -1,0 +1,16 @@
+name: regional_delayed_1vn
+mode: 1vN
+seed: 0
+blue_altitude_m: [9000.0, 11000.0]
+blue_speed_mps: 300.0
+blue_heading_deg: 30.0
+missile_count: 4
+missile_spawn_distance_m: [20000.0, 30000.0]
+missile_spawn_bearing_deg: [-60.0, 60.0]
+missile_spawn_altitude_m: [8000.0, 12000.0]
+missile_first_launch_time_s: 2.0
+missile_launch_interval_s: 3.0
+blue_detection_range_m: 15000.0
+max_episode_time_s: 90.0
+physics_dt: 0.005
+policy_dt: 0.1

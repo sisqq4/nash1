@@ -43,18 +43,18 @@ def test_header_stable_ids_multiple_missiles_removal_events_and_time(tmp_path):
         ], [{"kind": "hit", "entity_id": "missile_a"},
             {"kind": "ground_collision", "entity_id": "blue"}])
     text = path.read_text(encoding="utf-8")
-    assert text.startswith("FileType=text/acmi/tacview\nFileVersion=2.2\n")
+    assert text.startswith("FileType=text/acmi/tacview\nFileVersion=2.1\n")
     assert "0,ReferenceTime=2026-01-02T03:04:05Z" in text
-    assert text.index("#0.100") < text.index("#0.200")
-    assert text.count("1,T=") == 2
-    assert text.count("64,T=") == 1  # missile_a keeps object ID 0x64
-    assert text.count("65,T=") == 2  # missile_b keeps object ID 0x65
-    assert "-64" in text
-    assert "|0.000|0.000|90.000" in text
-    assert "Type=Air+FixedWing,Color=Blue" in text
-    assert "Type=Weapon+Missile,Color=Red" in text
-    assert "0,Event=Message|64|||||Hit" in text
-    assert "0,Event=Message|1|||||Ground collision" in text
+    assert text.index("#0.1") < text.index("#0.2")
+    assert text.count("a1,T=") == 2
+    assert text.count("b1,T=") == 1
+    assert text.count("b2,T=") == 2
+    assert "-b1" in text
+    assert "|0.0|0.0|90.0" in text
+    assert text.count("Name=F16,Color=Blue") == 2
+    assert text.count("Name=AIM-120,Color=Red") == 3
+    assert "0,Event=Message|b1|||||Hit" in text
+    assert "0,Event=Message|a1|||||Ground collision" in text
 
 
 def test_non_monotonic_time_rejected(tmp_path):
@@ -76,9 +76,9 @@ def test_jsonl_to_acmi_smoke_single_missile(tmp_path):
     assert trajectory_jsonl_to_acmi(source, output, origin=ORIGIN,
                                     reference_time="2026-01-01T00:00:00Z") == output
     text = output.read_text(encoding="utf-8")
-    assert "#0.100" in text
-    assert "1,T=10.00000000|45.00000000|600.000|0.000|0.000|0.000" in text
-    assert "64,T=10.00000000|45.00899322|100.000|0.000|0.000|0.000" in text
+    assert "#0.1" in text
+    assert "a1,T=10.0|45.0|600.0|0.0|0.0|0.0,Name=F16,Color=Blue" in text
+    assert "b1,T=10.0|45.00899321605919|100.0|0.0|0.0|0.0,Name=AIM-120,Color=Red" in text
 
 
 def test_snapshot_time_does_not_require_redundant_top_level_time(tmp_path):
@@ -88,7 +88,7 @@ def test_snapshot_time_does_not_require_redundant_top_level_time(tmp_path):
     }) + "\n", encoding="utf-8")
     output = tmp_path / "out.acmi"
     trajectory_jsonl_to_acmi(source, output, origin=ORIGIN)
-    assert "#0.250" in output.read_text(encoding="utf-8")
+    assert "#0.25" in output.read_text(encoding="utf-8")
 
 
 def test_non_finite_values_and_reserved_id_rejected(tmp_path):

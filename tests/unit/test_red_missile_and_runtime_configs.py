@@ -88,3 +88,56 @@ def test_proportional_navigation_acceleration_has_correct_units():
     ).to_missile_command(None)
     assert command.nn == pytest.approx(3.0 * 100.0 * 0.1 / STANDARD_GRAVITY)
     assert command.ns == pytest.approx(3.0 * 100.0 * -0.2 / STANDARD_GRAVITY)
+
+
+def test_regional_spawn_staggered_launch_and_detection_gated_blue_action(tmp_path):
+    scenario = tmp_path / "regional.yaml"
+    scenario.write_text(yaml.safe_dump({
+        "mode": "1vN",
+        "blue_altitude_m": [10000.0, 10000.0],
+        "blue_heading_deg": 90.0,
+        "missile_count": 3,
+        "missile_spawn_distance_m": [20000.0, 22000.0],
+        "missile_spawn_bearing_deg": [-20.0, 20.0],
+        "missile_spawn_altitude_m": [9000.0, 11000.0],
+        "missile_first_launch_time_s": 1.0,
+        "missile_launch_interval_s": 2.0,
+        "blue_detection_range_m": 1000.0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+    }), encoding="utf-8")
+    env, _ = build_blue_escape_env(
+        scenario, "configs/actions/blue_29.yaml", "zdj", 7
+    )
+    assert env.world.blue.kinematics.angles.psi == pytest.approx(math.pi / 2)
+    assert [missile.launch_time_s for missile in env.world.missiles] == [1.0, 3.0, 5.0]
+    for missile in env.world.missiles:
+        position = missile.kinematics.position
+        distance = math.hypot(position.x, position.z)
+        bearing = math.degrees(math.atan2(position.z, position.x))
+        assert 20000.0 <= distance <= 22000.0
+        assert -20.0 <= bearing <= 20.0
+        assert 9000.0 <= position.y <= 11000.0
+
+    initial_missile_position = env.world.missiles[0].kinematics.position
+    result = env.step(7)
+    assert result.info["threat_detected"] is False
+    assert result.info["requested_action_id"] == 7
+    assert result.info["executed_action_id"] == 0
+    assert env.world.missiles[0].kinematics.position == initial_missile_position
+
+
+def test_blue_executes_requested_action_after_launched_threat_is_detected(tmp_path):
+    scenario = tmp_path / "detected.yaml"
+    scenario.write_text(yaml.safe_dump({
+        "mode": "fixed_1v1",
+        "missile_spawn_distance_m": [500.0, 500.0],
+        "missile_spawn_bearing_deg": [0.0, 0.0],
+        "blue_detection_range_m": 1000.0,
+    }), encoding="utf-8")
+    env, _ = build_blue_escape_env(
+        scenario, "configs/actions/blue_29.yaml", "zdj", 0
+    )
+    result = env.step(7)
+    assert result.info["threat_detected"] is True
+    assert result.info["executed_action_id"] == 7
