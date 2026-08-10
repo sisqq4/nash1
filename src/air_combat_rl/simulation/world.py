@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 import math
 from air_combat_rl.core.math3d import flight_velocity
 from air_combat_rl.core.timebase import SimulationClock
+from air_combat_rl.core.units import STANDARD_GRAVITY
 from air_combat_rl.domain.commands import ManeuverCommand
 from air_combat_rl.domain.dynamics.aircraft_3dof import integrate_aircraft
 from air_combat_rl.domain.dynamics.missile_3dof import integrate_missile, proportional_navigation_command
@@ -21,8 +22,27 @@ class WorldConfig:
     max_guidance_time_s: float = 120.0
     missile_boost_time_s: float = 7.0
     missile_boost_nx_g: float = 6.0
+    missile_drag_coefficient_per_m: float = 1.0e-5
     closest_approach_event_threshold_m: float = 1.0
     success_distance_m: float = 30_000.0
+    blue_min_speed_mps: float | None = None
+    blue_max_speed_mps: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.navigation_constant <= 0:
+            raise ValueError("navigation_constant must be positive")
+        if self.missile_boost_time_s < 0 or self.missile_boost_nx_g < 0:
+            raise ValueError("missile boost time and acceleration must be non-negative")
+        if self.missile_drag_coefficient_per_m < 0:
+            raise ValueError("missile drag coefficient must be non-negative")
+        if self.kill_radius_m <= 0 or self.missile_stall_speed_mps < 0:
+            raise ValueError("kill radius must be positive and stall speed non-negative")
+        if (
+            self.blue_min_speed_mps is not None
+            and self.blue_max_speed_mps is not None
+            and self.blue_min_speed_mps >= self.blue_max_speed_mps
+        ):
+            raise ValueError("blue minimum speed must be below maximum speed")
 
 
 @dataclass(slots=True)
@@ -78,16 +98,26 @@ class SimulationWorld:
     def _step_physics_substep(self, command: ManeuverCommand) -> list[SimulationEvent]:
         events: list[SimulationEvent] = []
         self.substeps_last_interval += 1
-        self.blue = replace(self.blue, kinematics=integrate_aircraft(self.blue.kinematics, command, self.clock.physics_dt))
+        blue_kinematics = integrate_aircraft(self.blue.kinematics, command, self.clock.physics_dt)
+        if self.config.blue_min_speed_mps is not None or self.config.blue_max_speed_mps is not None:
+            blue_kinematics = replace(
+                blue_kinematics,
+                speed=min(
+                    self.config.blue_max_speed_mps if self.config.blue_max_speed_mps is not None else math.inf,
+                    max(self.config.blue_min_speed_mps or 0.0, blue_kinematics.speed),
+                ),
+            )
+        self.blue = replace(self.blue, kinematics=blue_kinematics)
         updated: list[MissileState] = []
         for i, missile in enumerate(self.missiles):
             if not missile.alive:
                 updated.append(missile)
                 continue
             age = missile.age_s + self.clock.physics_dt
-            mcmd = proportional_navigation_command(missile.kinematics, self.blue.kinematics, self.config.navigation_constant, 0.0)
+            drag_g = self.config.missile_drag_coefficient_per_m * missile.kinematics.speed ** 2 / STANDARD_GRAVITY
+            mcmd = proportional_navigation_command(missile.kinematics, self.blue.kinematics, self.config.navigation_constant, -drag_g)
             if missile.powered and age <= self.config.missile_boost_time_s:
-                mcmd = replace(mcmd, nx=self.config.missile_boost_nx_g)
+                mcmd = replace(mcmd, nx=self.config.missile_boost_nx_g - drag_g)
             kin = integrate_missile(missile.kinematics, mcmd, self.clock.physics_dt)
             alive = missile.alive
             if kin.position.y <= 0.0:

@@ -16,6 +16,8 @@ class EnvSpec:
     stage_name: str = "single"
     episode_id: int = 0
     projection_config: dict | None = None
+    platform_config_path: str | None = None
+    reward_config_path: str | None = None
 
 
 @dataclass(slots=True)

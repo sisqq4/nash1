@@ -8,8 +8,18 @@ import random
 import numpy as np
 
 from air_combat_rl.simulation.scenarios.factory import ScenarioConfig, build_scenario
+from air_combat_rl.domain.platform_config import PlatformConfig
 from air_combat_rl.tasks.blue_escape.action_catalog import ActionCatalog
 from air_combat_rl.tasks.blue_escape.environment import BlueEscapeEnv
+from air_combat_rl.tasks.blue_escape.rewards.components import RewardConfig
+
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _bundled_config(relative_path: str) -> Path:
+    """Resolve bundled configs independently of the process working directory."""
+    return _REPOSITORY_ROOT / "configs" / relative_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +30,10 @@ class RuntimeConfig:
     seed: int
     scenario: ScenarioConfig
     max_policy_steps: int | None
+    platform_config_path: str
+    reward_config_path: str
+    platform_config: PlatformConfig
+    reward_config: RewardConfig
 
 
 def build_blue_escape_env(
@@ -28,6 +42,8 @@ def build_blue_escape_env(
     platform: str,
     seed: int,
     max_policy_steps: int | None = None,
+    platform_config_path: str | Path | None = None,
+    reward_config_path: str | Path | None = None,
 ) -> tuple[BlueEscapeEnv, RuntimeConfig]:
     """Build a seeded BlueEscapeEnv from scenario and action config files."""
     random.seed(seed)
@@ -36,19 +52,32 @@ def build_blue_escape_env(
         raise ValueError(f"unsupported platform {platform!r}; expected 'zdj' or 'yjj'")
     scenario = ScenarioConfig.from_yaml(str(scenario_path))
     scenario = replace(scenario, seed=seed)
+    platform_path = Path(platform_config_path) if platform_config_path else _bundled_config(f"platform/{platform}.yaml")
+    platform_config = PlatformConfig.from_yaml(platform_path)
+    if platform_config.name != platform:
+        raise ValueError("platform config name does not match --platform")
     def world_factory(world_seed: int):
         configured = replace(scenario, seed=int(world_seed))
         built = build_scenario(configured)
         built.blue = replace(built.blue, platform=platform)
+        built.config = replace(
+            built.config,
+            blue_min_speed_mps=platform_config.min_speed,
+            blue_max_speed_mps=platform_config.max_speed,
+        )
         return built
     world = world_factory(seed)
+    reward_path = Path(reward_config_path) if reward_config_path else _bundled_config(
+        f"reward/escape_{'1vn' if len(world.missiles) > 1 else '1v1'}.yaml"
+    )
+    reward_config = RewardConfig.from_yaml(reward_path)
     actions = ActionCatalog.from_yaml(str(actions_path))
     if not any(actions.action_mask(platform)):
         raise ValueError(f"platform {platform!r} has no legal actions")
     if world.clock.physics_dt != scenario.physics_dt or world.clock.policy_dt != scenario.policy_dt:
         raise ValueError("world clock does not match scenario physics_dt/policy_dt")
-    env = BlueEscapeEnv(world, actions, platform, max_time_s=scenario.max_episode_time_s, max_policy_steps=max_policy_steps, world_factory=world_factory, initial_seed=seed)
-    return env, RuntimeConfig(str(scenario_path), str(actions_path), platform, seed, scenario, max_policy_steps)
+    env = BlueEscapeEnv(world, actions, platform, max_time_s=scenario.max_episode_time_s, max_policy_steps=max_policy_steps, world_factory=world_factory, initial_seed=seed, reward_config=reward_config, platform_config=platform_config)
+    return env, RuntimeConfig(str(scenario_path), str(actions_path), platform, seed, scenario, max_policy_steps, str(platform_path), str(reward_path), platform_config, reward_config)
 
 from air_combat_rl.algorithms.ppo.actor_critic import PPOActorCritic
 from air_combat_rl.algorithms.ppo.policy import ProjectedPPOPolicy

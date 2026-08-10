@@ -2,6 +2,10 @@
 
 This repository is structured as a layered blue-escape research codebase.
 
+> 中文使用说明与当前实现审计（场景、训练、GPU、结果展示、数学模型和参数）见
+> [`docs/current_project_audit_zh.md`](docs/current_project_audit_zh.md)。该文档同时区分了
+> “代码已经实现的能力”和“仍需物理校核/实验验证的假设”。
+
 ## Quick start
 
 Install Python 3.10+ and all runtime/test dependencies:
@@ -36,6 +40,10 @@ The current primary and default algorithm is **`ppo_projected`**.
 All algorithms are intended to share scenario configs, observation schema, reward functions, action catalog, termination semantics, and evaluation metrics so that comparisons measure algorithm differences rather than task differences.
 
 ## Single-scenario rollout CLI
+
+The runtime automatically loads `configs/platform/<platform>.yaml` and selects
+`configs/reward/escape_1v1.yaml` or `escape_1vn.yaml` from the scenario threat
+count. Unknown parameters are rejected instead of being silently ignored.
 
 Run one reproducible scenario without starting training or batch evaluation:
 
